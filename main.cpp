@@ -151,15 +151,24 @@ private:
     std::vector<short> data_;
 };
 
-const sample* g_sample;
-
 class sample_window : public window_base<sample_window> {
 public:
     ~sample_window() = default;
 
+    void set_sample(const sample& s) {
+        sample_ = &s;
+        undo_zoom();
+    }
+
 private:
     friend window_base<sample_window>;
     explicit sample_window() = default;
+
+    int width_            = 0;
+    const sample* sample_ = nullptr;
+    int left_             = 0;
+    int right_            = 0;
+    float zoom_start_     = -1.0f;
 
     static const wchar_t* class_name() { return L"sample_window"; }
 
@@ -167,10 +176,17 @@ private:
         return CreateSolidBrush(RGB(128, 128, 128));
     }
 
+    void undo_zoom() {
+        left_   = 0;
+        right_  = sample_->length();
+    }
+
+    float x_to_sample_pos(int x) const {
+        return left_ + static_cast<float>(x) * static_cast<float>(right_ - left_) / static_cast<float>(width_);
+    }
+
     void paint(HDC hdc) {
-        if (!g_sample) return;
-        const int sl = g_sample->length();
-        if (sl < 1) return;
+        if (!sample_ || left_ == right_) return;
 
         pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
         auto old_pen{select(hdc, pen)};
@@ -181,9 +197,9 @@ private:
         const int h = client_rect.bottom;
         auto scale = [h](float val) { return (h/2) + static_cast<int>(val * h / 2); };
 
-        MoveToEx(hdc, 0, scale(g_sample->get(0)), nullptr);
+        MoveToEx(hdc, 0, scale(sample_->get(0)), nullptr);
         for (int x = 1; x < w; ++x) {
-            LineTo(hdc, x, scale(g_sample->get_linear(static_cast<float>(x) * static_cast<float>(sl) / static_cast<float>(w))));
+            LineTo(hdc, x, scale(sample_->get_linear(x_to_sample_pos(x))));
         }
     }
 
@@ -198,10 +214,26 @@ private:
                 }
             }
             break;
+
         case WM_SIZE:
+            width_ = GET_X_LPARAM(lparam);
             InvalidateRect(hwnd(), nullptr, TRUE);
             break;
-        
+
+        case WM_LBUTTONDOWN:
+            zoom_start_ = x_to_sample_pos(GET_X_LPARAM(lparam));
+            break;
+
+        case WM_LBUTTONUP:
+            left_  = static_cast<int>(zoom_start_);
+            right_ = static_cast<int>(x_to_sample_pos(GET_X_LPARAM(lparam)));
+            RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+            break;
+
+        case WM_RBUTTONUP:
+            undo_zoom();
+            RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+            break;
         }
         return DefWindowProc(hwnd(), umsg, wparam, lparam);
     }
@@ -210,6 +242,11 @@ private:
 class main_window : public window_base<main_window> {
 public:
     ~main_window() = default;
+
+    void set_sample(const sample& s) {
+        sample_wnd_->set_sample(s);
+    }
+
 private:
     friend window_base<main_window>;
 
@@ -222,6 +259,7 @@ private:
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
         case WM_CREATE: {
+                SetWindowText(hwnd(), L"SampEdit");
                 sample_wnd_ = sample_window::create(hwnd());
             }
             break;
@@ -254,9 +292,10 @@ std::vector<short> create_sample(int len, int rate=44100)
 
 int main()
 {
-    sample samp{create_sample(44100/16)};
-    g_sample = &samp;
-    main_window::create(nullptr);
+    sample samp{create_sample(44100/4)};
+    auto& main_wnd = *main_window::create(nullptr);
+    main_wnd.set_sample(samp);
+
     
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
