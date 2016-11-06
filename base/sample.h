@@ -8,11 +8,14 @@
 
 class sample {
 public:
-    explicit sample(const std::vector<float>& data, const std::string& name)
+    explicit sample(const std::vector<float>& data, float c5_rate, const std::string& name)
         : data_(data)
+        , c5_rate_(c5_rate)
         , name_(name)
         , loop_start_(0)
         , loop_length_(0) {}
+
+    float c5_rate() const { return c5_rate_; }
 
     const std::string& name() const { return name_; }
 
@@ -36,6 +39,7 @@ public:
 
 private:
     std::vector<float> data_;
+    float              c5_rate_;
     std::string        name_;
     int                loop_start_;
     int                loop_length_;

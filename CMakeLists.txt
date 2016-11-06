@@ -26,6 +26,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 add_executable(${PROJECT_NAME} main.cpp
     module.cpp module.h
     base/sample.h
+    base/note.cpp base/note.h
     win32/base.cpp win32/base.h
     win32/gdi.cpp win32/gdi.h
     win32/sample_window.cpp win32/sample_window.h

@@ -155,26 +155,31 @@ int main(int argc, char* argv[])
             wprintf(L"Loaded '%S' - '%22.22S'\n", argv[1], mod.name);
             for (int i = 0; i < 31; ++i) {
                 const auto& s = mod.samples[i];
-                samples.emplace_back(convert_sample_data(s.data), std::string(s.name, s.name+sizeof(s.name)));
+                samples.emplace_back(convert_sample_data(s.data), 8363.0f, std::string(s.name, s.name+sizeof(s.name)));
                 if (s.loop_length > 2) {
                     samples.back().loop_start(s.loop_start);
                     samples.back().loop_length(s.loop_length);
                 }
             }
         } else {
-            for (int i = 1; i <= 4; ++i) { 
-                samples.emplace_back(create_sample(44100/4, 440.0f * i), "Sample " + std::to_string(i));
-            }
+            samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
         }
         auto main_wnd = main_window::create();
         main_wnd.set_samples(samples);
 
-        ShowWindow(main_wnd.hwnd(), SW_SHOW);
-        UpdateWindow(main_wnd.hwnd());
 
         mixer m{32};
+        //m.play(samples[0], 2*8287.14f);
+        main_wnd.on_piano_key_pressed([&](piano_key key) {
+            const int idx = main_wnd.current_sample_index();
+            if (idx < 0 || idx >= samples.size()) return;
+            const auto freq = piano_key_to_freq(key, piano_key::C_5, samples[idx].c5_rate());
+            wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
+            m.play(samples[idx], freq);
+        });
 
-        m.play(samples[0], 2*8287.14f);
+        ShowWindow(main_wnd.hwnd(), SW_SHOW);
+        UpdateWindow(main_wnd.hwnd());
 
         MSG msg;
         while (GetMessage(&msg, nullptr, 0, 0)) {

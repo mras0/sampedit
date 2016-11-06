@@ -13,6 +13,14 @@ public:
         select_sample(0);
     }
 
+    void on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
+        on_piano_key_pressed_.subscribe(cb);
+    }
+
+    int current_sample_index() const {
+        return sample_index_;
+    }
+
 private:
     friend window_base<main_window_impl>;
 
@@ -33,6 +41,9 @@ private:
     HWND                       sample_info_wnd_;
     HWND                       zoom_info_wnd_;
     HWND                       selection_info_wnd_;
+    int                        sample_index_= -1;
+
+    event<piano_key>           on_piano_key_pressed_;
 
     void select_sample(int index) {
         std::wostringstream wss;
@@ -40,9 +51,11 @@ private:
             const auto& s = (*samples_)[index];
             sample_wnd_.set_sample(&s);
             wss << std::setw(2) << index+1 << ": " << s.length() << " - \"" << s.name().c_str() << "\"\n";
+            sample_index_ = index;
         } else {
             sample_wnd_.set_sample(nullptr);
             wss << "No sample selected\n";
+            sample_index_ = -1;
         }
         SetWindowText(sample_info_wnd_, wss.str().c_str());
         InvalidateRect(hwnd(), nullptr, TRUE);
@@ -94,10 +107,27 @@ private:
         case WM_KEYDOWN:
             if (wparam == VK_ESCAPE) {
                 SendMessage(hwnd(), WM_CLOSE, 0, 0);
+            } else if (wparam == VK_OEM_PLUS) {
+                if (samples_) {
+                    assert(sample_index_ >= 0);
+                    select_sample((sample_index_ + 1) % samples_->size());
+                }
+            } else if (wparam == VK_OEM_MINUS) {
+                if (samples_) {
+                    assert(sample_index_ >= 0);
+                    select_sample(sample_index_ ? sample_index_ - 1 : static_cast<int>(samples_->size()) - 1);
+                }
             } else if (wparam >= '0' && wparam <= '9') {
                 int selected = static_cast<int>(wparam - '0');
                 if (selected == 0) selected = 10;
                 select_sample(selected - 1);
+            } else {
+                piano_key key = key_to_note(static_cast<int>(wparam));
+                if (key != piano_key::OFF) {
+                    on_piano_key_pressed_(key);
+                } else {
+                    wprintf(L"Unhandled key %d (0x%X)\n", (int)wparam, (int)wparam);
+                }
             }
             break;
 
@@ -122,7 +152,17 @@ main_window main_window::create()
     return main_window{main_window_impl::create(nullptr)->hwnd()};
 }
 
+int main_window::current_sample_index() const
+{
+    return main_window_impl::from_hwnd(hwnd())->current_sample_index();
+}
+
 void main_window::set_samples(const std::vector<sample>& s)
 {
     main_window_impl::from_hwnd(hwnd())->set_samples(s);
+}
+
+void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& cb)
+{
+    main_window_impl::from_hwnd(hwnd())->on_piano_key_pressed(cb);
 }
