@@ -74,6 +74,10 @@ public:
         at_next_tick([&s, freq, this]() { channels_[0].play(s, freq); });
     }
 
+    void key_off() {
+        at_next_tick([this]() { channels_[0].key_off(); });
+    }
+
 private:
     static constexpr int sample_rate = 44100;
     static constexpr int buffer_size = 4096;
@@ -83,14 +87,46 @@ private:
         explicit channel() {
         }
 
+        void key_off() {
+            state_ = state::not_playing;
+        }
+
         void play(const ::sample& s, float freq) {
             sample_ = &s;
             pos_    = 0;
             incr_   = freq / sample_rate;
+            state_  = state::playing_first;
         }
 
         void mix(float* stero_buffer, int num_stereo_samples) {
-            if (!sample_) return;
+            if (state_ == state::not_playing) return;
+            assert(sample_);
+
+            while (num_stereo_samples) {
+                const int end = state_ == state::looping ? sample_->loop_start() + sample_->loop_length() : sample_->length();
+                const int samples_till_end = static_cast<int>((end - pos_) / incr_);
+                if (!samples_till_end) {
+                    if (sample_->loop_length()) {
+                        assert(state_ == state::playing_first || state_ == state::looping);
+                        pos_   = static_cast<float>(sample_->loop_start());
+                        state_ = state::looping;
+                        continue;
+                    } else {
+                        wprintf(L"End of sample at %f\n", pos_);
+                        state_ = state::not_playing;
+                        break;
+                    }
+                }
+
+                const int now = std::min(samples_till_end, num_stereo_samples);
+                assert(now > 0);
+                do_mix(stero_buffer, now, *sample_, pos_, incr_);
+                num_stereo_samples -= now;
+                stero_buffer       += 2* now;
+                pos_               += incr_ * now;
+            }
+
+            #if 0
             while (pos_ < sample_->length() && num_stereo_samples) {
                 const auto s = sample_->get_linear(pos_);
                 stero_buffer[0] += s;
@@ -99,12 +135,26 @@ private:
                 stero_buffer  += 2;
                 num_stereo_samples--;
             }
+            #endif
         }
 
     private:
         const ::sample* sample_ = nullptr;
         float           pos_;
         float           incr_;
+        enum class state {
+            not_playing,
+            playing_first,
+            looping,
+        } state_ = state::not_playing;
+
+        static void do_mix(float* stero_buffer, int num_stereo_samples, const sample& samp, float pos, float incr) {
+            for (int i = 0; i < num_stereo_samples; ++i) {
+                const auto s = samp.get_linear(pos + i * incr);
+                stero_buffer[i*2+0] += s;
+                stero_buffer[i*2+1] += s;
+            }
+        }
     };
 
     std::vector<channel> channels_;
@@ -172,6 +222,10 @@ int main(int argc, char* argv[])
         mixer m{32};
         //m.play(samples[0], 2*8287.14f);
         main_wnd.on_piano_key_pressed([&](piano_key key) {
+            if (key == piano_key::OFF) {
+                m.key_off();
+                return;
+            }
             const int idx = main_wnd.current_sample_index();
             if (idx < 0 || idx >= samples.size()) return;
             const auto freq = piano_key_to_freq(key, piano_key::C_5, samples[idx].c5_rate());

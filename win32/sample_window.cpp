@@ -103,24 +103,28 @@ private:
 
         SetBkColor(hdc, default_background_color);
 
-        pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
-        auto old_pen{select(hdc, pen)};
-        RECT client_rect;
-        GetClientRect(hwnd(), &client_rect);
-        assert(client_rect.left == 0 && client_rect.top == 0);
-        assert(client_rect.right == size_.x && client_rect.bottom == size_.y);
+        //
+        // Sample data
+        //
+        {
+            pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
+            auto old_pen{select(hdc, pen)};
 
-        bool first = true;
-        for (int x = x_border; x < size_.x - x_border; ++x) {
-            const int y = sample_val_to_y(sample_->get(x_to_sample_pos(x-x_border)));
-            if (first) {
-                MoveToEx(hdc, x, y, nullptr);
-                first = false;
-            } else {
-                LineTo(hdc, x, y);
+            bool first = true;
+            for (int x = x_border; x < size_.x - x_border; ++x) {
+                const int y = sample_val_to_y(sample_->get(x_to_sample_pos(x-x_border)));
+                if (first) {
+                    MoveToEx(hdc, x, y, nullptr);
+                    first = false;
+                } else {
+                    LineTo(hdc, x, y);
+                }
             }
         }
 
+        //
+        // Middle line
+        //
         {
             pen_ptr dotted_pen{CreatePen(PS_DOT, 1, RGB(255, 255, 255))};
             auto old_pen_2{select(hdc, dotted_pen)};
@@ -128,6 +132,24 @@ private:
             LineTo(hdc, size_.x, size_.y / 2);
         }
 
+        //
+        // Loop lines
+        //
+        if (sample_->loop_length()) {
+            pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 255, 255))};
+            auto old_pen_3{select(hdc, pen)};
+            const int start_x = sample_pos_to_x(sample_->loop_start());
+            const int end_x   = sample_pos_to_x(sample_->loop_start() + sample_->loop_length());
+            MoveToEx(hdc, start_x, 0, nullptr);
+            LineTo(hdc, start_x, size_.y);
+            MoveToEx(hdc, end_x, 0, nullptr);
+            LineTo(hdc, end_x, size_.y);
+        }
+
+
+        //
+        // Selection
+        //
         const RECT selection_rect = {
             x_border + sample_pos_to_x(selection_.x0), y_border, 
             x_border + sample_pos_to_x(selection_.x1), size_.y - y_border };

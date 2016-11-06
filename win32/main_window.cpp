@@ -107,6 +107,8 @@ private:
         case WM_KEYDOWN:
             if (wparam == VK_ESCAPE) {
                 SendMessage(hwnd(), WM_CLOSE, 0, 0);
+            } else if (wparam == VK_SPACE) {
+                on_piano_key_pressed_(piano_key::OFF);
             } else if (wparam == VK_OEM_PLUS) {
                 if (samples_) {
                     assert(sample_index_ >= 0);
