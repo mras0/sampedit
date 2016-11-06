@@ -22,4 +22,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} /MT /DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} /MTd")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
 
-add_executable(${PROJECT_NAME} main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(${PROJECT_NAME} main.cpp
+    win32/base.cpp win32/base.h
+    win32/gdi.cpp win32/gdi.h
+    )
