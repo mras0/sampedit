@@ -31,7 +31,7 @@ public:
     float get_linear(float pos) const {
         const int ipos   = static_cast<int>(pos);
         const float frac = pos - static_cast<float>(ipos);
-        return data_[ipos]*(1.0f-frac) + data_[std::min(ipos+1, length())]*frac;
+        return data_[ipos]*(1.0f-frac) + data_[std::min(ipos+1, length()-1)]*frac;
     }
 
 private:
@@ -40,6 +40,18 @@ private:
     int                loop_start_;
     int                loop_length_;
 };
+
+inline short sample_to_s16(float s) {
+    s *= 32767.0f;
+    if (s > 0) {
+        s += 0.5f;
+        if (s > 32767.0f) s = 32767.0f;
+    } else {
+        s -= 0.5f;
+        if (s < -32768.0f) s = -32768.0f;
+    }
+    return static_cast<short>(s);
+}
 
 struct sample_range {
     int x0, x1;
