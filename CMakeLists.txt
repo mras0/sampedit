@@ -28,4 +28,5 @@ add_executable(${PROJECT_NAME} main.cpp
     win32/base.cpp win32/base.h
     win32/gdi.cpp win32/gdi.h
     win32/sample_window.cpp win32/sample_window.h
+    win32/main_window.cpp win32/main_window.h
     )

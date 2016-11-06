@@ -1,8 +1,6 @@
 #ifndef SAMPEDIT_WIN32_SAMPLE_WINDOW_H
 #define SAMPEDIT_WIN32_SAMPLE_WINDOW_H
 
-#include <memory>
-
 #include <base/sample.h>
 #include <win32/base.h>
 

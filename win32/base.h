@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <cassert>
+#include <memory>
 
 extern void fatal_error(const wchar_t* api, unsigned error = GetLastError());
 
