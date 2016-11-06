@@ -19,6 +19,7 @@ using gdi_obj_ptr = std::unique_ptr<T, delete_object_deleter>;
 using pen_ptr    = gdi_obj_ptr<HPEN__>;
 using brush_ptr  = gdi_obj_ptr<HBRUSH__>;
 using bitmap_ptr = gdi_obj_ptr<HBITMAP__>;
+using font_ptr   = gdi_obj_ptr<HFONT__>;
 
 struct dc_deleter {
     void operator()(HDC hdc) {
@@ -57,5 +58,7 @@ template<typename T>
 gdi_obj_restorer select(const dc_ptr& dc, const gdi_obj_ptr<T>& obj) {
     return select(dc.get(), obj);
 }
+
+font_ptr create_default_font(int height);
 
 #endif

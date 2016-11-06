@@ -4,10 +4,13 @@
 #include <vector>
 #include <cassert>
 #include <algorithm>
+#include <string>
 
 class sample {
 public:
-    explicit sample(const std::vector<float>& data) : data_(data) {}
+    explicit sample(const std::vector<float>& data, const std::string& name) : data_(data), name_(name) {}
+
+    const std::string& name() const { return name_; }
 
     int length() const { return static_cast<int>(data_.size()); }
 
@@ -23,6 +26,7 @@ public:
 
 private:
     std::vector<float> data_;
+    std::string        name_;
 };
 
 struct sample_range {

@@ -24,7 +24,7 @@ int main()
 {
     std::vector<sample> samples;
     for (int i = 1; i <= 4; ++i) { 
-        samples.emplace_back(create_sample(44100/4, 440.0f * i));
+        samples.emplace_back(create_sample(44100/4, 440.0f * i), "Sample " + std::to_string(i));
     }
     auto main_wnd = main_window::create();
     main_wnd.set_samples(samples);

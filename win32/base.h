@@ -7,8 +7,13 @@
 #include <windowsx.h>
 #include <cassert>
 #include <memory>
+#include <vector>
+#include <functional>
 
 extern void fatal_error(const wchar_t* api, unsigned error = GetLastError());
+
+constexpr COLORREF default_background_color = RGB(64, 64, 64);
+constexpr COLORREF default_text_color       = RGB(255, 127, 127);
 
 template<typename Derived>
 class window_base {
@@ -50,7 +55,7 @@ public:
     }
 
     static HBRUSH create_background_brush() {
-        return CreateSolidBrush(RGB(64, 64, 64)); // GetSysColorBrush(COLOR_WINDOW);
+        return CreateSolidBrush(default_background_color); // GetSysColorBrush(COLOR_WINDOW);
     }
 
 private:
@@ -81,5 +86,29 @@ private:
 };
 template<typename Derived>
 ATOM window_base<Derived>::class_atom_ = 0;
+
+template<typename... ArgTypes>
+using callback_function_type = std::function<void (ArgTypes...)>;
+
+template<typename... ArgTypes>
+class event {
+public:
+    using callback_type = callback_function_type<ArgTypes...>;
+
+    void subscribe(const callback_type& cb) {
+        assert(cb);
+        subscribers_.push_back(cb);
+    }
+
+    void operator()(ArgTypes... args) {
+        for (auto& s : subscribers_) {
+            s(args...);
+        }
+    }
+
+private:
+    std::vector<callback_type> subscribers_;
+};
+
 
 #endif

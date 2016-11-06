@@ -33,6 +33,16 @@ public:
         undo_zoom();
     }
 
+    void on_zoom_change(const callback_function_type<sample_range>& cb) {
+        on_zoom_change_.subscribe(cb);
+        cb(zoom_);
+    }
+
+    void on_selection_change(const callback_function_type<sample_range>& cb) {
+        on_selection_change_.subscribe(cb);
+        cb(selection_);
+    }
+
 private:
     friend window_base<sample_window_impl>;
 
@@ -54,6 +64,9 @@ private:
     sample_range  zoom_;
     sample_range  selection_;
 
+    event<sample_range> on_zoom_change_;
+    event<sample_range> on_selection_change_;
+
     enum class state {
         normal,
         selecting,
@@ -68,6 +81,7 @@ private:
         assert(state_ == state::normal);
         zoom_ = sample_range{0, sample_ ? sample_->length() : 0};
         InvalidateRect(hwnd(), nullptr, TRUE);
+        on_zoom_change_(zoom_);
     }
 
     int sample_pos_to_x(int pos) const {
@@ -150,7 +164,9 @@ private:
             if (sample_) {
                 state_ = state::selecting;
                 selection_.x0 = selection_.x1 = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
+                on_selection_change_(selection_);
                 SetCapture(hwnd());
+                InvalidateRect(hwnd(), nullptr, TRUE);
             }
             break;
 
@@ -171,6 +187,7 @@ private:
                 const auto new_end = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
                 if (selection_.x1 != new_end) {
                     selection_.x1 = new_end;
+                    on_selection_change_(sample_range{std::min(selection_.x0, selection_.x1), std::max(selection_.x0, selection_.x1)});
                     InvalidateRect(hwnd(), nullptr, TRUE);
                 }
             }
@@ -191,6 +208,8 @@ private:
                     zoom_ = selection_;
                     selection_ = sample_range{};
                     InvalidateRect(hwnd(), nullptr, TRUE);
+                    on_zoom_change_(zoom_);
+                    on_selection_change_(selection_);
                 }
                 break;
             case menu_id_undo_zoom:
@@ -212,4 +231,14 @@ void sample_window::set_sample(const sample* s)
 {
     assert(hwnd());
     return sample_window_impl::from_hwnd(hwnd())->set_sample(s);
+}
+
+void sample_window::on_zoom_change(const callback_function_type<sample_range>& cb)
+{
+    sample_window_impl::from_hwnd(hwnd())->on_zoom_change(cb);
+}
+
+void sample_window::on_selection_change(const callback_function_type<sample_range>& cb)
+{
+    sample_window_impl::from_hwnd(hwnd())->on_selection_change(cb);
 }

@@ -12,6 +12,9 @@ public:
     HWND hwnd() const { return hwnd_; }
     void set_sample(const sample* s);
 
+    void on_zoom_change(const callback_function_type<sample_range>& cb);
+    void on_selection_change(const callback_function_type<sample_range>& cb);
+
 private:
     explicit sample_window(HWND hwnd) : hwnd_(hwnd) {}
 
