@@ -10,21 +10,24 @@
 #include <win32/sample_window.h>
 #include <win32/main_window.h>
 
-std::vector<float> create_sample(int len, int rate=44100)
+std::vector<float> create_sample(int len, float freq, int rate=44100)
 {
     std::vector<float> data(len);
     constexpr float pi = 3.14159265359f;
     for (int i = 0; i < len; ++i) {
-        data[i] = std::cosf(2*pi*440.0f*i/rate);
+        data[i] = std::cosf(2*pi*freq*i/rate);
     }
     return data;
 }
 
 int main()
 {
-    sample samp{create_sample(44100/4)};
+    std::vector<sample> samples;
+    for (int i = 1; i <= 4; ++i) { 
+        samples.emplace_back(create_sample(44100/4, 440.0f * i));
+    }
     auto main_wnd = main_window::create();
-    main_wnd.set_sample(samp);
+    main_wnd.set_samples(samples);
 
     ShowWindow(main_wnd.hwnd(), SW_SHOW);
     UpdateWindow(main_wnd.hwnd());

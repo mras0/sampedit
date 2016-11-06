@@ -10,7 +10,7 @@ public:
     explicit sample_window() : hwnd_(nullptr) {}
 
     HWND hwnd() const { return hwnd_; }
-    void set_sample(const sample& s);
+    void set_sample(const sample* s);
 
 private:
     explicit sample_window(HWND hwnd) : hwnd_(hwnd) {}

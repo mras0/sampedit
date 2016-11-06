@@ -27,10 +27,10 @@ class sample_window_impl : public window_base<sample_window_impl> {
 public:
     ~sample_window_impl() = default;
 
-    void set_sample(const sample& s) {
-        sample_ = &s;
-        undo_zoom();
+    void set_sample(const sample* s) {
+        sample_    = s;
         selection_ = sample_range{};
+        undo_zoom();
     }
 
 private:
@@ -66,7 +66,8 @@ private:
 
     void undo_zoom() {
         assert(state_ == state::normal);
-        zoom_ = sample_range{0, sample_->length()};
+        zoom_ = sample_range{0, sample_ ? sample_->length() : 0};
+        InvalidateRect(hwnd(), nullptr, TRUE);
     }
 
     int sample_pos_to_x(int pos) const {
@@ -146,19 +147,21 @@ private:
 
         case WM_LBUTTONDOWN:
             assert(state_ == state::normal);
-            assert(sample_);
-            state_ = state::selecting;
-            selection_.x0 = selection_.x1 = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
-            SetCapture(hwnd());
+            if (sample_) {
+                state_ = state::selecting;
+                selection_.x0 = selection_.x1 = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
+                SetCapture(hwnd());
+            }
             break;
 
         case WM_LBUTTONUP:
-            assert(state_ == state::selecting);
-            assert(sample_);
-            ReleaseCapture();
-            state_ = state::normal;
-            if (selection_.x1 < selection_.x0) {
-                std::swap(selection_.x0, selection_.x1);
+            if (state_ == state::selecting) {
+                assert(sample_);
+                ReleaseCapture();
+                state_ = state::normal;
+                if (selection_.x1 < selection_.x0) {
+                    std::swap(selection_.x0, selection_.x1);
+                }
             }
             break;
 
@@ -192,7 +195,6 @@ private:
                 break;
             case menu_id_undo_zoom:
                 undo_zoom();
-                InvalidateRect(hwnd(), nullptr, TRUE);
                 break;
             }
             break;
@@ -206,7 +208,7 @@ sample_window sample_window::create(HWND parent_wnd)
     return sample_window{sample_window_impl::create(parent_wnd)->hwnd()};
 }
 
-void sample_window::set_sample(const sample& s)
+void sample_window::set_sample(const sample* s)
 {
     assert(hwnd());
     return sample_window_impl::from_hwnd(hwnd())->set_sample(s);

@@ -10,7 +10,7 @@ public:
     explicit main_window() : hwnd_(nullptr) {}
 
     HWND hwnd() const { return hwnd_; }
-    void set_sample(const sample& s);
+    void set_samples(const std::vector<sample>& s);
 
 private:
     explicit main_window(HWND hwnd) : hwnd_(hwnd) {}
