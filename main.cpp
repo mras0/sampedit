@@ -10,34 +10,34 @@
 
 class sample {
 public:
-    explicit sample(const std::vector<short>& data) : data_(data) {}
+    explicit sample(const std::vector<float>& data) : data_(data) {}
 
     int length() const { return static_cast<int>(data_.size()); }
 
     float get(int pos) const {
-        return data_[pos] / 32768.0f;
+        return data_[pos];
     }
 
     float get_linear(float pos) const {
         const int ipos   = static_cast<int>(pos);
         const float frac = pos - static_cast<float>(ipos);
-        return (data_[ipos]*(1.0f-frac) + data_[std::min(ipos+1, length())]*frac) / 32768.0f;
+        return data_[ipos]*(1.0f-frac) + data_[std::min(ipos+1, length())]*frac;
     }
 
 private:
-    std::vector<short> data_;
+    std::vector<float> data_;
 };
 
 struct sample_range {
-    float x0, x1;
+    int x0, x1;
 
     sample_range() : x0(0), x1(0) {}
-    explicit sample_range(float start, float end) : x0(start), x1(end) {}
+    explicit sample_range(int start, int end) : x0(start), x1(end) {}
 
-    float size() const { return x1 - x0; }
-    bool valid() const { return size() > 0.0f; }
+    int size() const { return x1 - x0; }
+    bool valid() const { return size() > 0; }
 
-    float clamp(float x) {
+    int clamp(int x) const {
         assert(valid());
         return std::max(x0, std::min(x, x1));
     }
@@ -107,15 +107,15 @@ private:
     const int y_border = 10;
 
     void undo_zoom() {
-        zoom_ = sample_range{0.0f, static_cast<float>(sample_->length())};
+        zoom_ = sample_range{0, sample_->length()};
     }
 
-    int sample_pos_to_x(float pos) const {
-        return static_cast<int>((pos - zoom_.x0) * static_cast<float>(size_.x - 2 * x_border) / zoom_.size());
+    int sample_pos_to_x(int pos) const {
+        return (pos - zoom_.x0) * (size_.x - 2 * x_border) / zoom_.size();
     }
 
-    float x_to_sample_pos(int x) const {
-        return zoom_.x0 + static_cast<float>(x) * zoom_.size() / static_cast<float>(size_.x - 2 * x_border);
+    int x_to_sample_pos(int x) const {
+        return zoom_.x0 + x * zoom_.size() / (size_.x - 2 * x_border);
     }
 
     int sample_val_to_y(float val) const {
@@ -124,7 +124,7 @@ private:
 
     void paint(HDC hdc, const RECT& paint_rect) {
         FillRect(hdc, &paint_rect, background_brush_.get());
-
+        if (size_.x <= 2*x_border || size_.y <= 2*y_border) return;
         if (!sample_ || !zoom_.valid()) return;
 
         pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
@@ -136,7 +136,7 @@ private:
 
         bool first = true;
         for (int x = x_border; x < size_.x - x_border; ++x) {
-            const int y = sample_val_to_y(sample_->get_linear(x_to_sample_pos(x-x_border)));
+            const int y = sample_val_to_y(sample_->get(x_to_sample_pos(x-x_border)));
             if (first) {
                 MoveToEx(hdc, x, y, nullptr);
                 first = false;
@@ -283,12 +283,12 @@ private:
     }
 };
 
-std::vector<short> create_sample(int len, int rate=44100)
+std::vector<float> create_sample(int len, int rate=44100)
 {
-    std::vector<short> data(len);
-    constexpr double pi = 3.14159265359;
+    std::vector<float> data(len);
+    constexpr float pi = 3.14159265359f;
     for (int i = 0; i < len; ++i) {
-        data[i] = static_cast<short>(32767*std::cos(2*pi*440.0*i/rate));
+        data[i] = std::cosf(2*pi*440.0f*i/rate);
     }
     return data;
 }
