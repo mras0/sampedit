@@ -18,12 +18,24 @@ public:
     static Derived* create(HWND parent, Args&&... args) {
         static bool class_registered = false;
         const auto hinst = Derived::class_instance();
-        if (!class_registered) {
-            Derived::register_class(hinst);
-            class_registered = true;
+        if (!class_atom_) {
+            WNDCLASS wc;
+            wc.style         = CS_VREDRAW | CS_HREDRAW;
+            wc.lpfnWndProc   = window_base::s_wndproc;
+            wc.cbClsExtra    = 0;
+            wc.cbWndExtra    = 0;
+            wc.hInstance     = hinst;
+            wc.hIcon         = NULL;
+            wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+            wc.hbrBackground = Derived::create_background_brush();
+            wc.lpszMenuName  = NULL;
+            wc.lpszClassName = Derived::class_name();
+            if ((class_atom_ = RegisterClass(&wc)) == 0) {
+                fatal_error(L"RegisterClass");
+            }
         }
         std::unique_ptr<Derived> wnd{new Derived(std::forward<Args>(args)...)};
-        const HWND hwnd = CreateWindowEx(0, Derived::class_name(), L"", parent ? WS_CHILD|WS_VISIBLE: WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, parent, nullptr, hinst, wnd.get());
+        const HWND hwnd = CreateWindowEx(0, MAKEINTATOM(class_atom_), L"", parent ? WS_CHILD|WS_VISIBLE: WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, parent, nullptr, hinst, wnd.get());
         if (!hwnd) {
             fatal_error(L"CreateWindowEx");
         }
@@ -31,32 +43,21 @@ public:
         return wnd.release();
     }
 
+    static Derived* from_hwnd(HWND hwnd) {
+        assert(GetClassWord(hwnd, GCW_ATOM) == class_atom_);
+        return reinterpret_cast<Derived *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+    }
+
     static HBRUSH create_background_brush() {
         return CreateSolidBrush(RGB(64, 64, 64)); // GetSysColorBrush(COLOR_WINDOW);
     }
 
 private:
+    static ATOM class_atom_;
     HWND hwnd_;
 
     static HINSTANCE class_instance() {
         return GetModuleHandle(nullptr);
-    }
-
-    static void register_class(HINSTANCE hinst) {
-        WNDCLASS wc;
-        wc.style         = CS_VREDRAW | CS_HREDRAW;
-        wc.lpfnWndProc   = window_base::s_wndproc;
-        wc.cbClsExtra    = 0;
-        wc.cbWndExtra    = 0;
-        wc.hInstance     = hinst;
-        wc.hIcon         = NULL;
-        wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-        wc.hbrBackground = Derived::create_background_brush();
-        wc.lpszMenuName  = NULL;
-        wc.lpszClassName = Derived::class_name();
-        if (!RegisterClass(&wc)) {
-            fatal_error(L"RegisterClass");
-        }
     }
 
     static LRESULT CALLBACK s_wndproc(HWND hwnd, UINT umsg, WPARAM wparam, LPARAM lparam) {
@@ -67,7 +68,7 @@ private:
             self->hwnd_ = hwnd;
             SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LPARAM>(self));
         } else {
-            self = reinterpret_cast<Derived *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+            self = from_hwnd(hwnd);
         }
         const LRESULT res = self ? self->wndproc(umsg, wparam, lparam) : DefWindowProc(hwnd, umsg, wparam, lparam);
         if (umsg == WM_NCDESTROY) {
@@ -77,5 +78,7 @@ private:
         return res;
     }
 };
+template<typename Derived>
+ATOM window_base<Derived>::class_atom_ = 0;
 
 #endif

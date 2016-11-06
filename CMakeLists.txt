@@ -24,6 +24,8 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 add_executable(${PROJECT_NAME} main.cpp
+    base/sample.h
     win32/base.cpp win32/base.h
     win32/gdi.cpp win32/gdi.h
+    win32/sample_window.cpp win32/sample_window.h
     )
