@@ -2,16 +2,16 @@
 #include <assert.h>
 #include <math.h>
 
-float note_difference_to_scale(int note_diff)
+float note_difference_to_scale(float note_diff)
 {
     // To go up a semi-tone multiply the frequency by pow(2,1./12) ~1.06
-    return pow(2.0f, static_cast<float>(note_diff) / notes_per_octave);
+    return pow(2.0f, note_diff / notes_per_octave);
 }
 
 float piano_key_to_freq(piano_key n, piano_key base_key /*= piano_key::A_4*/, float base_freq/* = 440.0f*/)
 {
     assert(n != piano_key::OFF);
-    return base_freq * note_difference_to_scale(static_cast<int>(n) - static_cast<int>(base_key));
+    return base_freq * note_difference_to_scale(static_cast<float>(static_cast<int>(n) - static_cast<int>(base_key)));
 }
 
 std::string piano_key_to_string(piano_key n)

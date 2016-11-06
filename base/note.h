@@ -31,7 +31,7 @@ constexpr piano_key operator-(int lhs, piano_key rhs) {
     return rhs - lhs;
 }
 
-float note_difference_to_scale(int note_diff);
+float note_difference_to_scale(float note_diff);
 
 float piano_key_to_freq(piano_key n, piano_key base_key = piano_key::A_4, float base_freq = 440.0f);
 

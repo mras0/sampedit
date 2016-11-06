@@ -117,16 +117,12 @@ private:
                     assert(sample_index_ >= 0);
                     select_sample(sample_index_ ? sample_index_ - 1 : static_cast<int>(samples_->size()) - 1);
                 }
-            } else if (wparam >= '0' && wparam <= '9') {
-                int selected = static_cast<int>(wparam - '0');
-                if (selected == 0) selected = 10;
-                select_sample(selected - 1);
             } else {
                 piano_key key = key_to_note(static_cast<int>(wparam));
                 if (key != piano_key::OFF) {
                     on_piano_key_pressed_(key);
                 } else {
-                    wprintf(L"Unhandled key %d (0x%X)\n", (int)wparam, (int)wparam);
+                    //wprintf(L"Unhandled key %d (0x%X)\n", (int)wparam, (int)wparam);
                 }
             }
             break;
@@ -134,7 +130,7 @@ private:
         case WM_SIZE: {
                 const int w      = GET_X_LPARAM(lparam);
                 const int s_h    = 400;
-                const int text_w = 150;
+                const int text_w = 200;
                 const int text_offset = 10;
                 SetWindowPos(sample_wnd_.hwnd(), nullptr, 0, 0, w, s_h, SWP_NOZORDER | SWP_NOACTIVATE);
                 SetWindowPos(sample_info_wnd_, nullptr, text_offset, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);

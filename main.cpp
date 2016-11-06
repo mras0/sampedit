@@ -155,7 +155,8 @@ int main(int argc, char* argv[])
             wprintf(L"Loaded '%S' - '%22.22S'\n", argv[1], mod.name);
             for (int i = 0; i < 31; ++i) {
                 const auto& s = mod.samples[i];
-                samples.emplace_back(convert_sample_data(s.data), 8363.0f, std::string(s.name, s.name+sizeof(s.name)));
+                wprintf(L"%22.22S FineTune: %d\n", s.name, s.finetune);
+                samples.emplace_back(convert_sample_data(s.data), 8363.0f*note_difference_to_scale(s.finetune/8.0f), std::string(s.name, s.name+sizeof(s.name)));
                 if (s.loop_length > 2) {
                     samples.back().loop_start(s.loop_start);
                     samples.back().loop_length(s.loop_length);
