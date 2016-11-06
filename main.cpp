@@ -151,6 +151,16 @@ private:
     std::vector<short> data_;
 };
 
+struct sample_range {
+    float x0, x1;
+
+    sample_range() : x0(0), x1(0) {}
+    explicit sample_range(float start, float end) : x0(start), x1(end) {}
+
+    float size() const { return x1 - x0; }
+    bool valid() const { return size() > 0.0f; }
+};
+
 class sample_window : public window_base<sample_window> {
 public:
     ~sample_window() = default;
@@ -164,43 +174,56 @@ private:
     friend window_base<sample_window>;
     explicit sample_window() = default;
 
-    int width_            = 0;
+    POINT         size_;
     const sample* sample_ = nullptr;
-    int left_             = 0;
-    int right_            = 0;
-    float zoom_start_     = -1.0f;
+    sample_range  zoom_;
+    sample_range  selection_;
+
+    enum class state {
+        normal,
+        selecting,
+    } state_ = state::normal;
 
     static const wchar_t* class_name() { return L"sample_window"; }
 
     static HBRUSH background_brush() {
-        return CreateSolidBrush(RGB(128, 128, 128));
+        return CreateSolidBrush(RGB(64, 64, 64));
     }
 
     void undo_zoom() {
-        left_   = 0;
-        right_  = sample_->length();
+        zoom_ = sample_range{0.0f, static_cast<float>(sample_->length())};
+    }
+
+    int sample_pos_to_x(float pos) const {
+        return static_cast<int>((pos - zoom_.x0) * static_cast<float>(size_.x) / zoom_.size());
     }
 
     float x_to_sample_pos(int x) const {
-        return left_ + static_cast<float>(x) * static_cast<float>(right_ - left_) / static_cast<float>(width_);
+        return zoom_.x0 + static_cast<float>(x) * zoom_.size() / static_cast<float>(size_.x);
+    }
+
+    int sample_val_to_y(float val) const {
+        const int mid = size_.y / 2;
+        return mid + static_cast<int>(val * mid);
     }
 
     void paint(HDC hdc) {
-        if (!sample_ || left_ == right_) return;
+        if (!sample_ || !zoom_.valid()) return;
 
         pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
         auto old_pen{select(hdc, pen)};
         RECT client_rect;
         GetClientRect(hwnd(), &client_rect);
         assert(client_rect.left == 0 && client_rect.top == 0);
-        const int w = client_rect.right;
-        const int h = client_rect.bottom;
-        auto scale = [h](float val) { return (h/2) + static_cast<int>(val * h / 2); };
+        assert(client_rect.right == size_.x && client_rect.bottom == size_.y);
 
-        MoveToEx(hdc, 0, scale(sample_->get(0)), nullptr);
-        for (int x = 1; x < w; ++x) {
-            LineTo(hdc, x, scale(sample_->get_linear(x_to_sample_pos(x))));
+        MoveToEx(hdc, 0, sample_val_to_y(sample_->get(0)), nullptr);
+        for (int x = 1; x < size_.x; ++x) {
+            LineTo(hdc, x, sample_val_to_y(sample_->get_linear(x_to_sample_pos(x))));
         }
+
+        const RECT selection_rect = { sample_pos_to_x(selection_.x0), 0, sample_pos_to_x(selection_.x1), size_.y };
+        InvertRect(hdc, &selection_rect);
     }
 
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
@@ -216,18 +239,40 @@ private:
             break;
 
         case WM_SIZE:
-            width_ = GET_X_LPARAM(lparam);
+            size_ = POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
             InvalidateRect(hwnd(), nullptr, TRUE);
             break;
 
         case WM_LBUTTONDOWN:
-            zoom_start_ = x_to_sample_pos(GET_X_LPARAM(lparam));
+            assert(state_ == state::normal);
+            assert(sample_);
+            state_ = state::selecting;
+            selection_.x0 = selection_.x1 = x_to_sample_pos(GET_X_LPARAM(lparam));
+            SetCapture(hwnd());
             break;
 
         case WM_LBUTTONUP:
-            left_  = static_cast<int>(zoom_start_);
-            right_ = static_cast<int>(x_to_sample_pos(GET_X_LPARAM(lparam)));
+            assert(state_ == state::selecting);
+            assert(sample_);
+            ReleaseCapture();
+            state_ = state::normal;
+            if (selection_.x1 < selection_.x0) {
+                std::swap(selection_.x0, selection_.x1);
+            }
+            zoom_ = selection_;
+            selection_ = sample_range{};
             RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+            break;
+
+        case WM_MOUSEMOVE:
+            if (state_ == state::selecting) {
+                assert(sample_);
+                const auto new_end = std::max(0.0f, std::min(x_to_sample_pos(GET_X_LPARAM(lparam)), static_cast<float>(sample_->length())));
+                if (selection_.x1 != new_end) {
+                    selection_.x1 = new_end;
+                    RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+                }
+            }
             break;
 
         case WM_RBUTTONUP:
