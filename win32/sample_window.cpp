@@ -101,6 +101,8 @@ private:
         if (size_.x <= 2*x_border || size_.y <= 2*y_border) return;
         if (!sample_ || !zoom_.valid()) return;
 
+        SetBkColor(hdc, default_background_color);
+
         pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
         auto old_pen{select(hdc, pen)};
         RECT client_rect;
@@ -119,10 +121,18 @@ private:
             }
         }
 
+        {
+            pen_ptr dotted_pen{CreatePen(PS_DOT, 1, RGB(255, 255, 255))};
+            auto old_pen_2{select(hdc, dotted_pen)};
+            MoveToEx(hdc, 0, size_.y / 2, nullptr);
+            LineTo(hdc, size_.x, size_.y / 2);
+        }
+
         const RECT selection_rect = {
             x_border + sample_pos_to_x(selection_.x0), y_border, 
             x_border + sample_pos_to_x(selection_.x1), size_.y - y_border };
         InvertRect(hdc, &selection_rect);
+
     }
 
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {

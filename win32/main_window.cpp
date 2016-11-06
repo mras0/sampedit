@@ -2,6 +2,7 @@
 #include <win32/sample_window.h>
 #include <win32/gdi.h>
 #include <sstream>
+#include <iomanip>
 
 class main_window_impl : public window_base<main_window_impl> {
 public:
@@ -38,7 +39,7 @@ private:
         if (samples_ && index >= 0 && index < static_cast<int>(samples_->size())) {
             const auto& s = (*samples_)[index];
             sample_wnd_.set_sample(&s);
-            wss << index+1 << ": " << s.length() << " - \"" << s.name().c_str() << "\"\n";
+            wss << std::setw(2) << index+1 << ": " << s.length() << " - \"" << s.name().c_str() << "\"\n";
         } else {
             sample_wnd_.set_sample(nullptr);
             wss << "No sample selected\n";
