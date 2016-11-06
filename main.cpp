@@ -48,6 +48,11 @@ public:
         assert(hwnd == wnd->hwnd());
         return wnd.release();
     }
+
+    static HBRUSH create_background_brush() {
+        return CreateSolidBrush(RGB(64, 64, 64)); // GetSysColorBrush(COLOR_WINDOW);
+    }
+
 private:
     HWND hwnd_;
 
@@ -55,20 +60,16 @@ private:
         return GetModuleHandle(nullptr);
     }
 
-    static HBRUSH background_brush() {
-        return reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    }
-
     static void register_class(HINSTANCE hinst) {
         WNDCLASS wc;
-        wc.style         = 0;
+        wc.style         = CS_VREDRAW | CS_HREDRAW;
         wc.lpfnWndProc   = window_base::s_wndproc;
         wc.cbClsExtra    = 0;
         wc.cbWndExtra    = 0;
         wc.hInstance     = hinst;
         wc.hIcon         = NULL;
         wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-        wc.hbrBackground = Derived::background_brush();
+        wc.hbrBackground = Derived::create_background_brush();
         wc.lpszMenuName  = NULL;
         wc.lpszClassName = Derived::class_name();
         if (!RegisterClass(&wc)) {
@@ -98,13 +99,28 @@ private:
 struct delete_object_deleter {
     void operator()(void* obj) {
         if (obj) {
-            ::DeleteObject(obj);
+            const BOOL delete_ok = ::DeleteObject(obj);
+            assert(delete_ok); (void)delete_ok;
         }
     }
 };
 
 template<typename T>
 using gdi_obj_ptr = std::unique_ptr<T, delete_object_deleter>;
+
+using pen_ptr    = gdi_obj_ptr<HPEN__>;
+using brush_ptr  = gdi_obj_ptr<HBRUSH__>;
+using bitmap_ptr = gdi_obj_ptr<HBITMAP__>;
+
+struct dc_deleter {
+    void operator()(HDC hdc) {
+        if (hdc) {
+            const BOOL delete_ok = ::DeleteDC(hdc);
+            assert(delete_ok); (void)delete_ok;
+        }
+    }
+};
+using dc_ptr = std::unique_ptr<HDC__, dc_deleter>;
 
 class gdi_obj_restorer {
 public:
@@ -129,7 +145,10 @@ gdi_obj_restorer select(HDC hdc, const gdi_obj_ptr<T>& obj) {
     return gdi_obj_restorer{hdc, ::SelectObject(hdc, obj.get())};
 }
 
-using pen_ptr = gdi_obj_ptr<HPEN__>;
+template<typename T>
+gdi_obj_restorer select(const dc_ptr& dc, const gdi_obj_ptr<T>& obj) {
+    return select(dc.get(), obj);
+}
 
 class sample {
 public:
@@ -159,6 +178,11 @@ struct sample_range {
 
     float size() const { return x1 - x0; }
     bool valid() const { return size() > 0.0f; }
+
+    float clamp(float x) {
+        assert(valid());
+        return std::max(x0, std::min(x, x1));
+    }
 };
 
 class popup_menu {
@@ -201,12 +225,13 @@ private:
         menu_id_undo_zoom,
     };
 
-    explicit sample_window() {
+    explicit sample_window() : background_brush_(create_background_brush()) {
         menu_.insert(menu_id_zoom, L"Zoom");
         menu_.insert(menu_id_undo_zoom, L"Undo Zoom");
     }
 
     popup_menu    menu_;
+    brush_ptr     background_brush_;
 
     POINT         size_;
     const sample* sample_ = nullptr;
@@ -220,28 +245,28 @@ private:
 
     static const wchar_t* class_name() { return L"sample_window"; }
 
-    static HBRUSH background_brush() {
-        return CreateSolidBrush(RGB(64, 64, 64));
-    }
+    const int x_border = 10;
+    const int y_border = 10;
 
     void undo_zoom() {
         zoom_ = sample_range{0.0f, static_cast<float>(sample_->length())};
     }
 
     int sample_pos_to_x(float pos) const {
-        return static_cast<int>((pos - zoom_.x0) * static_cast<float>(size_.x) / zoom_.size());
+        return static_cast<int>((pos - zoom_.x0) * static_cast<float>(size_.x - 2 * x_border) / zoom_.size());
     }
 
     float x_to_sample_pos(int x) const {
-        return zoom_.x0 + static_cast<float>(x) * zoom_.size() / static_cast<float>(size_.x);
+        return zoom_.x0 + static_cast<float>(x) * zoom_.size() / static_cast<float>(size_.x - 2 * x_border);
     }
 
     int sample_val_to_y(float val) const {
-        const int mid = size_.y / 2;
-        return mid + static_cast<int>(val * mid);
+        return (size_.y / 2) + static_cast<int>(0.5 + val * (size_.y / 2 - y_border));
     }
 
-    void paint(HDC hdc) {
+    void paint(HDC hdc, const RECT& paint_rect) {
+        FillRect(hdc, &paint_rect, background_brush_.get());
+
         if (!sample_ || !zoom_.valid()) return;
 
         pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
@@ -251,21 +276,47 @@ private:
         assert(client_rect.left == 0 && client_rect.top == 0);
         assert(client_rect.right == size_.x && client_rect.bottom == size_.y);
 
-        MoveToEx(hdc, 0, sample_val_to_y(sample_->get(0)), nullptr);
-        for (int x = 1; x < size_.x; ++x) {
-            LineTo(hdc, x, sample_val_to_y(sample_->get_linear(x_to_sample_pos(x))));
+        bool first = true;
+        for (int x = x_border; x < size_.x - x_border; ++x) {
+            const int y = sample_val_to_y(sample_->get_linear(x_to_sample_pos(x-x_border)));
+            if (first) {
+                MoveToEx(hdc, x, y, nullptr);
+                first = false;
+            } else {
+                LineTo(hdc, x, y);
+            }
         }
 
-        const RECT selection_rect = { sample_pos_to_x(selection_.x0), 0, sample_pos_to_x(selection_.x1), size_.y };
+        const RECT selection_rect = {
+            x_border + sample_pos_to_x(selection_.x0), y_border, 
+            x_border + sample_pos_to_x(selection_.x1), size_.y - y_border };
         InvertRect(hdc, &selection_rect);
     }
 
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
+        case WM_ERASEBKGND:
+            return TRUE;
         case WM_PAINT: {
                 PAINTSTRUCT ps;
                 if (BeginPaint(hwnd(), &ps)) {
-                    paint(ps.hdc);
+                    if (!IsRectEmpty(&ps.rcPaint)) {
+                        // Double buffer as per https://blogs.msdn.microsoft.com/oldnewthing/20060103-12/?p=32793
+                        dc_ptr dc{CreateCompatibleDC(ps.hdc)};
+                        if (dc) {
+                            int x  = ps.rcPaint.left;
+                            int y  = ps.rcPaint.top;
+                            int cx = ps.rcPaint.right  - ps.rcPaint.left;
+                            int cy = ps.rcPaint.bottom - ps.rcPaint.top;
+                            bitmap_ptr bitmap{CreateCompatibleBitmap(ps.hdc, cx, cy)};
+                            if (bitmap) {
+                                auto old_bitmap = select(dc, bitmap);
+                                SetWindowOrgEx(dc.get(), x, y, nullptr);
+                                paint(dc.get(), ps.rcPaint);
+                                BitBlt(ps.hdc, x, y, cx, cy, dc.get(), x, y, SRCCOPY);
+                            }
+                        }
+                    }
                     EndPaint(hwnd(), &ps);
                     return 0;
                 }
@@ -274,14 +325,13 @@ private:
 
         case WM_SIZE:
             size_ = POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-            InvalidateRect(hwnd(), nullptr, TRUE);
             break;
 
         case WM_LBUTTONDOWN:
             assert(state_ == state::normal);
             assert(sample_);
             state_ = state::selecting;
-            selection_.x0 = selection_.x1 = x_to_sample_pos(GET_X_LPARAM(lparam));
+            selection_.x0 = selection_.x1 = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
             SetCapture(hwnd());
             break;
 
@@ -298,10 +348,10 @@ private:
         case WM_MOUSEMOVE:
             if (state_ == state::selecting) {
                 assert(sample_);
-                const auto new_end = std::max(0.0f, std::min(x_to_sample_pos(GET_X_LPARAM(lparam)), static_cast<float>(sample_->length())));
+                const auto new_end = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
                 if (selection_.x1 != new_end) {
                     selection_.x1 = new_end;
-                    RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+                    InvalidateRect(hwnd(), nullptr, TRUE);
                 }
             }
             break;
@@ -320,12 +370,12 @@ private:
                 if (selection_.valid()) {
                     zoom_ = selection_;
                     selection_ = sample_range{};
-                    RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+                    InvalidateRect(hwnd(), nullptr, TRUE);
                 }
                 break;
             case menu_id_undo_zoom:
                 undo_zoom();
-                RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+                InvalidateRect(hwnd(), nullptr, TRUE);
                 break;
             }
             break;
