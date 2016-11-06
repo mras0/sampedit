@@ -41,7 +41,7 @@ public:
             class_registered = true;
         }
         std::unique_ptr<Derived> wnd{new Derived(std::forward<Args>(args)...)};
-        const HWND hwnd = CreateWindowEx(0, Derived::class_name(), L"", WS_VISIBLE | (parent ? WS_CHILD : WS_OVERLAPPEDWINDOW), CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, parent, nullptr, hinst, wnd.get());
+        const HWND hwnd = CreateWindowEx(0, Derived::class_name(), L"", parent ? WS_CHILD|WS_VISIBLE: WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, parent, nullptr, hinst, wnd.get());
         if (!hwnd) {
             fatal_error(L"CreateWindowEx");
         }
@@ -161,6 +161,29 @@ struct sample_range {
     bool valid() const { return size() > 0.0f; }
 };
 
+class popup_menu {
+public:
+    explicit popup_menu() : menu_(CreatePopupMenu()) {
+    }
+    popup_menu(const popup_menu&) = delete;
+    popup_menu& operator=(const popup_menu&) = delete;
+    ~popup_menu() {
+        DestroyMenu(menu_);
+    }
+
+    void insert(UINT_PTR id, const wchar_t* text) {
+        InsertMenu(menu_, static_cast<UINT>(-1), MF_BYPOSITION|MF_STRING, id, text);
+    }
+
+    void track(int x, int y, HWND parent_wnd) {
+        TrackPopupMenu(menu_, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_LEFTBUTTON, x, y, 0, parent_wnd, nullptr);
+    }
+
+private:
+    HMENU menu_;
+};
+
+
 class sample_window : public window_base<sample_window> {
 public:
     ~sample_window() = default;
@@ -172,7 +195,18 @@ public:
 
 private:
     friend window_base<sample_window>;
-    explicit sample_window() = default;
+
+    enum menu_ids {
+        menu_id_zoom = 100,
+        menu_id_undo_zoom,
+    };
+
+    explicit sample_window() {
+        menu_.insert(menu_id_zoom, L"Zoom");
+        menu_.insert(menu_id_undo_zoom, L"Undo Zoom");
+    }
+
+    popup_menu    menu_;
 
     POINT         size_;
     const sample* sample_ = nullptr;
@@ -259,9 +293,6 @@ private:
             if (selection_.x1 < selection_.x0) {
                 std::swap(selection_.x0, selection_.x1);
             }
-            zoom_ = selection_;
-            selection_ = sample_range{};
-            RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
             break;
 
         case WM_MOUSEMOVE:
@@ -275,9 +306,28 @@ private:
             }
             break;
 
-        case WM_RBUTTONUP:
-            undo_zoom();
-            RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+        case WM_RBUTTONUP: {
+                RECT window_rect;
+                GetWindowRect(hwnd(), &window_rect);
+                menu_.track(window_rect.left + GET_X_LPARAM(lparam), window_rect.top + GET_Y_LPARAM(lparam), hwnd());
+            }
+            break;
+
+        case WM_COMMAND:
+            assert(state_ == state::normal);
+            switch (LOWORD(wparam)) {
+            case menu_id_zoom:
+                if (selection_.valid()) {
+                    zoom_ = selection_;
+                    selection_ = sample_range{};
+                    RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+                }
+                break;
+            case menu_id_undo_zoom:
+                undo_zoom();
+                RedrawWindow(hwnd(), nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE);
+                break;
+            }
             break;
         }
         return DefWindowProc(hwnd(), umsg, wparam, lparam);
@@ -318,7 +368,7 @@ private:
             break;
 
         case WM_SIZE:
-            SetWindowPos(sample_wnd_->hwnd(), nullptr, 0, 0, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), SWP_NOZORDER | SWP_NOACTIVATE);
+            SetWindowPos(sample_wnd_->hwnd(), nullptr, 0, 0, GET_X_LPARAM(lparam), /*GET_Y_LPARAM(lparam)*/400, SWP_NOZORDER | SWP_NOACTIVATE);
             return 0;
         }
         return DefWindowProc(hwnd(), umsg, wparam, lparam);
@@ -341,6 +391,8 @@ int main()
     auto& main_wnd = *main_window::create(nullptr);
     main_wnd.set_sample(samp);
 
+    ShowWindow(main_wnd.hwnd(), SW_SHOW);
+    UpdateWindow(main_wnd.hwnd());
     
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
