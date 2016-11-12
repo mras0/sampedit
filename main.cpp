@@ -158,6 +158,9 @@ public:
         return channels_[index];
     }
 
+    void ticks_per_second(int tps) {
+        ticks_per_second_ = tps;
+    }
 
 private:
     static constexpr int sample_rate = 44100;
@@ -293,16 +296,18 @@ private:
     public:
         explicit channel(mod_player& player, mixer::channel& mix_chan) : player_(player), mix_chan_(mix_chan) {}
 
-        void set_sample(int sample) {
-            assert(sample >= 1 && sample <= 32);
-            sample_ = sample;
-            volume(mod_sample().volume);
-        }
-
-        void set_period(int period) {
-            if (player_.samples_) {
-                assert(sample_);
-                mix_chan_.play((*player_.samples_)[sample_-1], period_to_freq(period));
+        void process_note(const module_note& note) {
+            if (note.sample) { 
+                assert(note.sample >= 1 && note.sample <= 32);
+                sample_ = note.sample;
+                volume(mod_sample().volume);
+            }
+            const auto effect = note.effect>>8;
+            if (note.period && effect != 3 && effect != 5) {
+                period_ = note.period;
+                if (note.effect>>4 != 0xED) {
+                    trig();
+                }
             }
         }
 
@@ -312,6 +317,9 @@ private:
             const int x  = xy>>4;
             const int y  = xy&0xf;
             switch (effect>>8) {
+            case 0x3: // Port to note
+                wprintf(L"Ignoring port to note %02X\n", xy);
+                return;
             case 0xC: // Set volume
                 if (tick == 0) {
                     mix_chan_.volume(xy/64.0f);
@@ -319,13 +327,34 @@ private:
                 return;
             case 0xE:
                 switch (x) {
+                case 0x0: // E0x Set fiter
+                    return;
                 case 0xA: // EAx Fine volume slide up
-                    if (tick == 0) {
+                    if (!tick)  {
                         volume(std::min(max_volume, volume() + 1));
+                    }
+                    return;
+                case 0xB: // EAx Fine volume slide down
+                    if (!tick) {
+                        volume(std::max(0, volume() - 1));
+                    }
+                    return;
+                case 0xD: // EDx Delay note
+                    if (tick == y) {
+                        trig();
                     }
                     return;
                 }
                 break;
+            case 0xF: // Fxy Set speed
+                if (tick) return;
+                if (xy < 0x20) {
+                    player_.speed_ = xy;
+                } else {
+                    // BPM, 2*bpm/5 ticks per second
+                    player_.mixer_.ticks_per_second(xy*2/5);
+                }
+                return;
             }
             wprintf(L"Unhandled effect %03X\n", effect);
         }
@@ -335,6 +364,7 @@ private:
         mixer::channel& mix_chan_;
         int             sample_ = 0;
         int             volume_ = 0;
+        int             period_ = 0;
 
         int volume() const { return volume_; }
 
@@ -348,12 +378,18 @@ private:
             assert(sample_ >= 1 && sample_ <= 32);
             return player_.mod_.samples[sample_ - 1];
         }
+
+        void trig() {
+            if (player_.samples_) {
+                assert(sample_);
+                mix_chan_.play((*player_.samples_)[sample_-1], period_to_freq(period_));
+            }
+        }
     };
 
     module mod_;
     mixer& mixer_;
     int      speed_ = 6;     // Number of ticks per row 1..127
-    int      bpm_   = 125;   // BPM, 2*bpm/5 ticks per second
     int      order_ = 0;     // Position in order table 0..song length-1
     int      row_ = -1;      // Current row in pattern
     int      tick_ = 6;      // Current tick 0..speed
@@ -370,12 +406,7 @@ private:
         for (int ch = 0; ch < num_channels; ++ch) {
             auto& channel = channels_[ch];
             const auto& note = mod_.at(order_, row_)[ch];
-            if (note.sample) { 
-                channel.set_sample(note.sample);
-            }
-            if (note.period) {
-                channel.set_period(note.period);
-            }
+            channel.process_note(note);
         }
     }
 
