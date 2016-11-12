@@ -12,6 +12,8 @@ public:
 
     HWND hwnd() const { return hwnd_; }
 
+    void update_grid(int centered_row);
+
 private:
     explicit pattern_edit(HWND hwnd) : hwnd_(hwnd) {}
 

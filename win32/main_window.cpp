@@ -152,6 +152,10 @@ public:
         return sample_edit_->current_sample_index();
     }
 
+    void update_grid(int centered_row) {
+        pattern_edit_.update_grid(centered_row);
+    }
+
 private:
     friend window_base<main_window_impl>;
     virtual_grid& grid_;
@@ -293,4 +297,9 @@ void main_window::set_samples(const std::vector<sample>& s)
 void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& cb)
 {
     main_window_impl::from_hwnd(hwnd())->on_piano_key_pressed(cb);
+}
+
+void main_window::update_grid(int centered_row) const {
+    main_window_impl::from_hwnd(hwnd())->update_grid(centered_row);
+
 }

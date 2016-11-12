@@ -19,7 +19,7 @@ private:
     friend window_base<text_grid_view_impl>;
     friend double_buffered_paint<text_grid_view_impl>;
 
-    static const wchar_t* class_name() { return L"pattern_edit_impl"; }
+    static const wchar_t* class_name() { return L"text_grid_view_impl"; }
 
     explicit text_grid_view_impl(virtual_grid& grid) : grid_(grid), font_(create_default_tt_font(14)) {
     }

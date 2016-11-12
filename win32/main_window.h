@@ -16,6 +16,7 @@ public:
     void set_samples(const std::vector<sample>& s);
 
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb);
+    void update_grid(int centered_row) const;
 
 private:
     explicit main_window(HWND hwnd) : hwnd_(hwnd) {}
