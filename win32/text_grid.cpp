@@ -53,7 +53,7 @@ private:
         SIZE font_size;
         GetTextExtentPoint(hdc, TEXT("0"), 1, &font_size);
 
-        const int x_spacing = 10;
+        const int x_spacing = font_size.cy*2;
         const int y_spacing = 1;
 
         const int line_height = font_size.cy + 2 * y_spacing;
@@ -96,7 +96,7 @@ private:
         const int row_max = std::min<int>((paint_rect.bottom + line_height - 1) / line_height, rows);
 
         for (int r = row_min; r < row_max; ++r) {
-            int x = x_spacing;
+            int x = /*x_spacing*/0;
             for (int c = 0; c < static_cast<int>(colw.size()); ++c) {
                 const auto s = grid_.cell_value(r, c);
                 TextOutA(hdc, x, y_spacing + r * line_height - line_height/2, s.c_str(), static_cast<int>(s.length()));

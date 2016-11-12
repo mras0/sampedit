@@ -219,11 +219,89 @@ private:
     }
 };
 
+class mod_grid : public virtual_grid {
+public:
+    explicit mod_grid(const module& mod) : mod_(mod) {
+    }
+
+private:
+    module mod_;
+
+    virtual int do_rows() const override {
+        return 64;
+    }
+
+    virtual std::vector<int> do_column_widths() const override {
+        constexpr int w = 10;
+        return { 2, w, w, w, w };
+    }
+
+    static piano_key period_to_piano_key(int period) {
+        //const float sample_rate = 7159090.5f / (period * 2);
+
+        /*
+        Finetune 0
+        C    C#   D    D#   E    F    F#   G    G#   A    A#   B
+        Octave 0:1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907
+        Octave 1: 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453
+        Octave 2: 428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226
+        Octave 3: 214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113
+        Octave 4: 107, 101,  95,  90,  85,  80,  76,  71,  67,  64,  60,  57
+        */
+
+        constexpr int note_periods[12 * 5] = {
+            1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907,
+            856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453,
+            428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226,
+            214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113,
+            107, 101,  95,  90,  85,  80,  76,  71,  67,  64,  60,  57,
+        };
+
+        for (int i = 0; i < sizeof(note_periods) / sizeof(*note_periods); ++i) {
+            if (period == note_periods[i]) {
+                return piano_key::C_0 + i + 2*12; // Octave offset: PT=0, FT2=2, MPT=3
+            }
+        }
+        assert(false);
+        return piano_key::OFF;
+    }
+
+    virtual std::string do_cell_value(int row, int column) const override {
+        assert(row >= 0 && row < 64);
+        assert(row >= 0 && column < 5);
+        std::ostringstream ss;
+        ss << std::hex << std::setfill('0') << std::uppercase;
+        if (column == 0) {
+            ss << std::setw(2) << row;
+        } else {
+            const auto& note = mod_.at(0, row)[column-1];
+            if (note.period) {
+                ss << piano_key_to_string(period_to_piano_key(note.period));
+            } else {
+                ss << "...";
+            }
+            ss << " ";
+            if (note.sample) {
+                ss << std::setw(2) << (int)note.sample;
+            } else {
+                ss << "..";
+            }
+            ss << " ";
+            if (note.effect) {
+                ss << std::setw(2) << (int)note.effect;
+            } else {
+                ss << "...";
+            }
+        }
+        return ss.str();
+    }
+};
 
 int main(int argc, char* argv[])
 {
     try {
         std::vector<sample> samples;
+        std::unique_ptr<virtual_grid> grid;
         if (argc > 1) {
             auto mod = load_module(argv[1]);
             wprintf(L"Loaded '%S' - '%22.22S'\n", argv[1], mod.name);
@@ -236,11 +314,18 @@ int main(int argc, char* argv[])
                     samples.back().loop_length(s.loop_length);
                 }
             }
+
+            for (int row = 0; row < 64; ++row) {
+                mod.at(0, row);
+            }
+
+            wprintf(L"\n");
+            grid.reset(new mod_grid{mod});
         } else {
             samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
+            grid.reset(new test_grid{});
         }
-        test_grid grid;
-        auto main_wnd = main_window::create(grid);
+        auto main_wnd = main_window::create(*grid);
         main_wnd.set_samples(samples);
 
 
