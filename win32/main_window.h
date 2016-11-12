@@ -3,11 +3,12 @@
 
 #include <base/sample.h>
 #include <base/note.h>
+#include <base/virtual_grid.h>
 #include <win32/base.h>
 
 class main_window {
 public:
-    static main_window create();
+    static main_window create(virtual_grid& grid);
     explicit main_window() : hwnd_(nullptr) {}
 
     HWND hwnd() const { return hwnd_; }

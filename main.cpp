@@ -195,6 +195,30 @@ private:
     }
 };
 
+#include <iomanip>
+#include <sstream>
+#include <base/virtual_grid.h>
+class test_grid : public virtual_grid {
+public:
+private:
+    virtual int do_rows() const override {
+        return 64;
+    }
+    virtual std::vector<int> do_column_widths() const override {
+        return { 3, 9, 9, 9, 9 };
+    }
+    virtual std::string do_cell_value(int row, int column) const override {
+        std::ostringstream ss;
+        ss << std::hex << std::setfill('0');
+        if (column == 0) {
+            ss << std::setw(2) << row;
+        } else {
+            ss << std::setw(2) << column;
+        }
+        return ss.str();
+    }
+};
+
 
 int main(int argc, char* argv[])
 {
@@ -215,7 +239,8 @@ int main(int argc, char* argv[])
         } else {
             samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
         }
-        auto main_wnd = main_window::create();
+        test_grid grid;
+        auto main_wnd = main_window::create(grid);
         main_wnd.set_samples(samples);
 
 

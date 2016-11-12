@@ -99,7 +99,7 @@ private:
             int x = x_spacing;
             for (int c = 0; c < static_cast<int>(colw.size()); ++c) {
                 const auto s = grid_.cell_value(r, c);
-                TextOut(hdc, x, y_spacing + r * line_height - line_height/2, s.c_str(), static_cast<int>(s.length()));
+                TextOutA(hdc, x, y_spacing + r * line_height - line_height/2, s.c_str(), static_cast<int>(s.length()));
                 x += colw[c] * font_size.cx + x_spacing;
             }
         }

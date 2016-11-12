@@ -3,9 +3,11 @@
 
 #include <win32/base.h>
 
+class virtual_grid;
+
 class pattern_edit {
 public:
-    static pattern_edit create(HWND parent_wnd);
+    static pattern_edit create(HWND parent_wnd, virtual_grid& grid);
     explicit pattern_edit() : hwnd_(nullptr) {}
 
     HWND hwnd() const { return hwnd_; }

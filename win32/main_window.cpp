@@ -154,8 +154,9 @@ public:
 
 private:
     friend window_base<main_window_impl>;
+    virtual_grid& grid_;
 
-    explicit main_window_impl() : tab_font_(create_default_font(14)) {
+    explicit main_window_impl(virtual_grid& grid) : grid_(grid), tab_font_(create_default_font(14)) {
     }
 
     static const wchar_t* class_name() { return L"main_window"; }
@@ -224,7 +225,7 @@ private:
         }
         set_font(tab_control_wnd_, tab_font_);
         sample_edit_  = sample_edit::create(tab_control_wnd_);
-        pattern_edit_ = pattern_edit::create(tab_control_wnd_);
+        pattern_edit_ = pattern_edit::create(tab_control_wnd_, grid_);
         add_tab_page(L"Pattern", pattern_edit_.hwnd());
         add_tab_page(L"Sample", sample_edit_->hwnd());
         return true;
@@ -269,14 +270,14 @@ private:
     }
 };
 
-main_window main_window::create()
+main_window main_window::create(virtual_grid& grid)
 {
     INITCOMMONCONTROLSEX icce{ sizeof(INITCOMMONCONTROLSEX), ICC_TAB_CLASSES };
     if (!InitCommonControlsEx(&icce)) {
         fatal_error(L"InitCommonControlsEx");
     }
 
-    return main_window{main_window_impl::create(nullptr)->hwnd()};
+    return main_window{main_window_impl::create(nullptr, grid)->hwnd()};
 }
 
 int main_window::current_sample_index() const
