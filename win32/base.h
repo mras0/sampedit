@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 #include <functional>
+#include <tuple>
 
 extern void fatal_error(const wchar_t* api, unsigned error = GetLastError());
 
@@ -66,6 +67,46 @@ private:
         return GetModuleHandle(nullptr);
     }
 
+    template<UINT msg, typename = Derived, typename = void>
+    struct msg_handler {
+        static LRESULT invoke(Derived& derived, WPARAM wparam, LPARAM lparam) {
+            return derived.wndproc(msg, wparam, lparam);
+        }
+    };
+    
+    template<typename R>
+    struct call_helper {
+        template<typename... Args>
+        static LRESULT invoke(Derived& derived, R (Derived::* func)(Args...), Args... args) {
+            R r = (derived.*func)(args...);
+            return reinterpret_cast<LRESULT>(r);
+        }
+    };
+
+    template<>
+    struct call_helper<void> {
+        template<typename... Args>
+        static LRESULT invoke(Derived& derived, void (Derived::* func)(Args...), Args... args) {
+            (derived.*func)(args...);
+            return 0;
+        }
+    };
+
+#define MSG_HANDLERS(X) \
+    X(WM_SIZE, void, on_size, static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)) \
+    X(WM_PAINT, void, on_paint)
+
+#define INIT_MSG_HANDLER(msg, rettype, handler_func, ...)                                              \
+    template<typename D>                                                                               \
+    struct msg_handler<msg, D, std::void_t<decltype(&D::handler_func)>> {                              \
+        static LRESULT invoke(Derived& derived, WPARAM wparam, LPARAM lparam) {                        \
+            (void)wparam; (void)lparam;                                                                \
+            return call_helper<rettype>::invoke(derived, &D::handler_func, __VA_ARGS__);               \
+        }                                                                                              \
+    };
+    MSG_HANDLERS(INIT_MSG_HANDLER)
+#undef INIT_MSG_HANDLER
+
     static LRESULT CALLBACK s_wndproc(HWND hwnd, UINT umsg, WPARAM wparam, LPARAM lparam) {
         Derived* self;
         if (umsg == WM_NCCREATE) {
@@ -76,7 +117,20 @@ private:
         } else {
             self = from_hwnd(hwnd);
         }
-        const LRESULT res = self ? self->wndproc(umsg, wparam, lparam) : DefWindowProc(hwnd, umsg, wparam, lparam);
+        LRESULT res;
+        if (self) {
+            auto& derived = static_cast<Derived&>(*self);
+            switch (umsg) {
+#define TRY_MSG_HANDLER(msg, rettype, handler_func, ...) case msg: res = msg_handler<msg>::invoke(derived, wparam, lparam);
+                MSG_HANDLERS(TRY_MSG_HANDLER)
+#undef TRY_MSG_HANDLER
+
+            default:
+                res = derived.wndproc(umsg, wparam, lparam);
+            }
+        } else {
+            res = DefWindowProc(hwnd, umsg, wparam, lparam);
+        }
         if (umsg == WM_NCDESTROY) {
             SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);
             delete self;

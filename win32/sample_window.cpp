@@ -23,7 +23,7 @@ private:
     HMENU menu_;
 };
 
-class sample_window_impl : public window_base<sample_window_impl> {
+class sample_window_impl : public window_base<sample_window_impl>, private double_buffered_paint<sample_window_impl> {
 public:
     ~sample_window_impl() = default;
 
@@ -45,6 +45,7 @@ public:
 
 private:
     friend window_base<sample_window_impl>;
+    friend double_buffered_paint<sample_window_impl>;
 
     enum menu_ids {
         menu_id_zoom = 100,
@@ -154,42 +155,16 @@ private:
             x_border + sample_pos_to_x(selection_.x0), y_border, 
             x_border + sample_pos_to_x(selection_.x1), size_.y - y_border };
         InvertRect(hdc, &selection_rect);
+    }
 
+    void on_size(UINT /*state*/, int cx, int cy) {
+        size_ = POINT{cx, cy};
     }
 
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
         case WM_ERASEBKGND:
             return TRUE;
-        case WM_PAINT: {
-                PAINTSTRUCT ps;
-                if (BeginPaint(hwnd(), &ps)) {
-                    if (!IsRectEmpty(&ps.rcPaint)) {
-                        // Double buffer as per https://blogs.msdn.microsoft.com/oldnewthing/20060103-12/?p=32793
-                        dc_ptr dc{CreateCompatibleDC(ps.hdc)};
-                        if (dc) {
-                            int x  = ps.rcPaint.left;
-                            int y  = ps.rcPaint.top;
-                            int cx = ps.rcPaint.right  - ps.rcPaint.left;
-                            int cy = ps.rcPaint.bottom - ps.rcPaint.top;
-                            bitmap_ptr bitmap{CreateCompatibleBitmap(ps.hdc, cx, cy)};
-                            if (bitmap) {
-                                auto old_bitmap = select(dc, bitmap);
-                                SetWindowOrgEx(dc.get(), x, y, nullptr);
-                                paint(dc.get(), ps.rcPaint);
-                                BitBlt(ps.hdc, x, y, cx, cy, dc.get(), x, y, SRCCOPY);
-                            }
-                        }
-                    }
-                    EndPaint(hwnd(), &ps);
-                    return 0;
-                }
-            }
-                       break;
-
-        case WM_SIZE:
-            size_ = POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-            break;
 
         case WM_LBUTTONDOWN:
             assert(state_ == state::normal);

@@ -62,4 +62,32 @@ gdi_obj_restorer select(const dc_ptr& dc, const gdi_obj_ptr<T>& obj) {
 font_ptr create_default_font(int height);
 font_ptr create_default_tt_font(int height);
 
+template<typename Derived>
+struct double_buffered_paint {
+    void on_paint() {
+        auto& derived = static_cast<Derived&>(*this);
+        PAINTSTRUCT ps;
+        if (BeginPaint(derived.hwnd(), &ps)) {
+            if (!IsRectEmpty(&ps.rcPaint)) {
+                // Double buffer as per https://blogs.msdn.microsoft.com/oldnewthing/20060103-12/?p=32793
+                dc_ptr dc{CreateCompatibleDC(ps.hdc)};
+                if (dc) {
+                    int x  = ps.rcPaint.left;
+                    int y  = ps.rcPaint.top;
+                    int cx = ps.rcPaint.right  - ps.rcPaint.left;
+                    int cy = ps.rcPaint.bottom - ps.rcPaint.top;
+                    bitmap_ptr bitmap{CreateCompatibleBitmap(ps.hdc, cx, cy)};
+                    if (bitmap) {
+                        auto old_bitmap = select(dc, bitmap);
+                        SetWindowOrgEx(dc.get(), x, y, nullptr);
+                        derived.paint(dc.get(), ps.rcPaint);
+                        BitBlt(ps.hdc, x, y, cx, cy, dc.get(), x, y, SRCCOPY);
+                    }
+                }
+            }
+            EndPaint(derived.hwnd(), &ps);
+        }
+    }
+};
+
 #endif
