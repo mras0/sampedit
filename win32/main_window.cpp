@@ -185,7 +185,7 @@ private:
         if (TabCtrl_InsertItem(tab_control_wnd_, page, &tci) == -1) {
             fatal_error(L"TabCtrl_InsertItem");
         }
-        ShowWindow(wnd, page == 0 ? SW_SHOW : SW_HIDE);
+        ShowWindow(wnd, page == TabCtrl_GetCurSel(tab_control_wnd_) ? SW_SHOW : SW_HIDE);
         tab_pages_.push_back(wnd);
     }
 
@@ -209,6 +209,7 @@ private:
         HWND const tab_wnd = current_tab_wnd();
         SetWindowPos(tab_wnd, nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
         ShowWindow(tab_wnd, SW_SHOW);
+        InvalidateRect(tab_wnd, nullptr, TRUE);
     }
 
     void set_tab_page(int page) {
@@ -226,6 +227,12 @@ private:
     pattern_edit   pattern_edit_;
     sample_edit*   sample_edit_;
 
+
+    void on_size(UINT /*state*/, int cx, int cy) {
+        SetWindowPos(tab_control_wnd_, nullptr, 0, 0, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
+        on_tab_page_switched();
+    }
+
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
         case WM_CREATE: {
@@ -242,11 +249,6 @@ private:
 
         case WM_NCDESTROY:
             PostQuitMessage(0);
-            break;
-
-        case WM_SIZE:
-            SetWindowPos(tab_control_wnd_, nullptr, 0, 0, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), SWP_NOZORDER | SWP_NOACTIVATE);
-            on_tab_page_switched();
             break;
 
         case WM_KEYDOWN:

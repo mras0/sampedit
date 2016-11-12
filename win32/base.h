@@ -10,6 +10,7 @@
 #include <vector>
 #include <functional>
 #include <tuple>
+#include <utility>
 
 extern void fatal_error(const wchar_t* api, unsigned error = GetLastError());
 
@@ -67,45 +68,49 @@ private:
         return GetModuleHandle(nullptr);
     }
 
-    template<UINT msg, typename = Derived, typename = void>
-    struct msg_handler {
-        static LRESULT invoke(Derived& derived, WPARAM wparam, LPARAM lparam) {
-            return derived.wndproc(msg, wparam, lparam);
-        }
-    };
-    
-    template<typename R>
-    struct call_helper {
-        template<typename... Args>
-        static LRESULT invoke(Derived& derived, R (Derived::* func)(Args...), Args... args) {
-            R r = (derived.*func)(args...);
-            return reinterpret_cast<LRESULT>(r);
-        }
-    };
-
-    template<>
-    struct call_helper<void> {
-        template<typename... Args>
-        static LRESULT invoke(Derived& derived, void (Derived::* func)(Args...), Args... args) {
-            (derived.*func)(args...);
-            return 0;
+    struct handler_base {
+        static LRESULT invoke(Derived& d, UINT umsg, WPARAM wparam, LPARAM lparam, ...) {
+            return d.wndproc(umsg, wparam, lparam);
         }
     };
 
 #define MSG_HANDLERS(X) \
-    X(WM_SIZE, void, on_size, static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)) \
-    X(WM_PAINT, void, on_paint)
+    X(WM_SIZE, (d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)), 0)) \
+    X(WM_PAINT, (d.on_paint(), 0)) \
 
-#define INIT_MSG_HANDLER(msg, rettype, handler_func, ...)                                              \
-    template<typename D>                                                                               \
-    struct msg_handler<msg, D, std::void_t<decltype(&D::handler_func)>> {                              \
-        static LRESULT invoke(Derived& derived, WPARAM wparam, LPARAM lparam) {                        \
-            (void)wparam; (void)lparam;                                                                \
-            return call_helper<rettype>::invoke(derived, &D::handler_func, __VA_ARGS__);               \
-        }                                                                                              \
+
+#define IMPL_HANDLER(msg, expr) \
+struct msg ## _handler : public handler_base { \
+    using handler_base::invoke;                \
+    template<typename D>                       \
+    static LRESULT invoke(D& d, UINT, WPARAM wparam, LPARAM lparam, typename std::enable_if<true, decltype(expr)>::type*) { \
+        (void)wparam; (void)lparam;             \
+        return (LRESULT)(expr);                 \
+    }                                           \
+};
+    MSG_HANDLERS(IMPL_HANDLER);
+#undef IMPL_HANDLER
+
+
+#if 0
+    struct WM_SIZE_handler : public handler_base {
+        using handler_base::invoke;
+        template<typename D>
+        static LRESULT invoke(D& d, UINT, WPARAM wparam, LPARAM lparam, typename std::enable_if<true, decltype((d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)), 0))>::type*) {
+            d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+            return 0;
+        }
     };
-    MSG_HANDLERS(INIT_MSG_HANDLER)
-#undef INIT_MSG_HANDLER
+
+    struct WM_PAINT_handler : public handler_base {
+        using handler_base::invoke;
+        template<typename D>
+        static LRESULT invoke(D& d, UINT, WPARAM, LPARAM, typename std::enable_if<true, decltype(d.on_paint())>::type*) {
+            d.on_paint();
+            return 0;
+        }
+    };
+#endif
 
     static LRESULT CALLBACK s_wndproc(HWND hwnd, UINT umsg, WPARAM wparam, LPARAM lparam) {
         Derived* self;
@@ -121,10 +126,10 @@ private:
         if (self) {
             auto& derived = static_cast<Derived&>(*self);
             switch (umsg) {
-#define TRY_MSG_HANDLER(msg, rettype, handler_func, ...) case msg: res = msg_handler<msg>::invoke(derived, wparam, lparam);
-                MSG_HANDLERS(TRY_MSG_HANDLER)
-#undef TRY_MSG_HANDLER
-
+#define HANDLER_CASE(msg) case msg: res = msg ## _handler::invoke(derived, umsg, wparam, lparam, nullptr); break
+                HANDLER_CASE(WM_SIZE);
+                HANDLER_CASE(WM_PAINT);
+#undef HANDLER_CASE
             default:
                 res = derived.wndproc(umsg, wparam, lparam);
             }
@@ -137,6 +142,8 @@ private:
         }
         return res;
     }
+
+#undef MSG_HANDLERS
 };
 template<typename Derived>
 ATOM window_base<Derived>::class_atom_ = 0;
