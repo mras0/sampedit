@@ -4,9 +4,13 @@
 #include <sstream>
 #include <iomanip>
 
-class main_window_impl : public window_base<main_window_impl> {
+// Enable v6 common controls
+#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#include <commctrl.h>
+
+class sample_edit_window : public window_base<sample_edit_window> {
 public:
-    ~main_window_impl() = default;
+    ~sample_edit_window() = default;
 
     void set_samples(const std::vector<sample>& s) {
         samples_ = &s;
@@ -22,14 +26,14 @@ public:
     }
 
 private:
-    friend window_base<main_window_impl>;
+    friend window_base<sample_edit_window>;
 
-    explicit main_window_impl() 
+    explicit sample_edit_window() 
         : background_brush_(create_background_brush())
         , font_(create_default_font(info_font_height)) {
     }
 
-    static const wchar_t* class_name() { return L"main_window"; }
+    static const wchar_t* class_name() { return L"sample_edit_window"; }
 
     const std::vector<sample>* samples_ = nullptr;
 
@@ -79,7 +83,6 @@ private:
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
         case WM_CREATE: {
-                SetWindowText(hwnd(), L"SampEdit");
                 sample_wnd_      = sample_window::create(hwnd());
                 sample_info_wnd_ = create_label();
                 zoom_info_wnd_   = create_label();
@@ -145,8 +148,119 @@ private:
     }
 };
 
+class main_window_impl : public window_base<main_window_impl> {
+public:
+    ~main_window_impl() = default;
+
+    void set_samples(const std::vector<sample>& s) {
+        sample_edit_window_->set_samples(s);
+    }
+
+    void on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
+        sample_edit_window_->on_piano_key_pressed(cb);
+    }
+
+    int current_sample_index() const {
+        return sample_edit_window_->current_sample_index();
+    }
+
+private:
+    friend window_base<main_window_impl>;
+
+    explicit main_window_impl() {
+    }
+
+    static const wchar_t* class_name() { return L"main_window"; }
+
+    //
+    // Tabs
+    //
+    HWND              tab_control_wnd_;
+    std::vector<HWND> tab_pages_;
+
+    void add_tab_page(const wchar_t* text, HWND wnd) {
+        const auto page = static_cast<int>(tab_pages_.size());
+        TCITEM tci;
+        tci.mask    = TCIF_TEXT;
+        tci.pszText = const_cast<wchar_t*>(text);
+        if (TabCtrl_InsertItem(tab_control_wnd_, page, &tci) == -1) {
+            fatal_error(L"TabCtrl_InsertItem");
+        }
+        ShowWindow(wnd, page == 0 ? SW_SHOW : SW_HIDE);
+        tab_pages_.push_back(wnd);
+    }
+
+    void select_tab_page(int page) {
+        assert(page >= 0 && page < tab_pages_.size());
+        RECT rect;
+        GetClientRect(tab_control_wnd_, &rect);
+        TabCtrl_AdjustRect(tab_control_wnd_, FALSE, &rect);
+        SetWindowPos(tab_pages_[page], nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(tab_pages_[page], SW_SHOW);
+        SetFocus(tab_pages_[page]);
+    }
+
+    //
+    // Tab pages
+    //
+    sample_edit_window* sample_edit_window_;
+
+    LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
+        switch (umsg) {
+        case WM_CREATE: {
+                SetWindowText(hwnd(), L"SampEdit");
+                if ((tab_control_wnd_ = CreateWindow(WC_TABCONTROL, L"", WS_CHILD|WS_CLIPSIBLINGS|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr)) == nullptr) {
+                    fatal_error(L"CreateWindow(WC_TABCONTROL)");
+                }
+                sample_edit_window_ = sample_edit_window::create(tab_control_wnd_);
+                add_tab_page(L"Track", CreateWindow(L"STATIC", L"Track", WS_CHILD|WS_VISIBLE, 0, 0, 400, 100, tab_control_wnd_, nullptr, nullptr, nullptr));
+                add_tab_page(L"Sample", sample_edit_window_->hwnd());
+            }
+            break;
+
+        case WM_NCDESTROY:
+            PostQuitMessage(0);
+            break;
+
+        case WM_SIZE:
+            SetWindowPos(tab_control_wnd_, nullptr, 0, 0, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), SWP_NOZORDER | SWP_NOACTIVATE);
+            select_tab_page(TabCtrl_GetCurSel(tab_control_wnd_));
+            break;
+
+        case WM_SETFOCUS: {
+                const int page = TabCtrl_GetCurSel(tab_control_wnd_);
+                assert(page >= 0 && page < tab_pages_.size());
+                SetFocus(tab_pages_[page]);
+            }
+            break;
+
+
+        case WM_NOTIFY:
+            switch (reinterpret_cast<const NMHDR*>(lparam)->code) {
+            case TCN_SELCHANGING: {
+                    const int page = TabCtrl_GetCurSel(tab_control_wnd_);
+                    assert(page >= 0 && page < tab_pages_.size());
+                    ShowWindow(tab_pages_[page], SW_HIDE);
+                    return FALSE; // Allow change
+                }
+            case TCN_SELCHANGE: {
+                    select_tab_page(TabCtrl_GetCurSel(tab_control_wnd_));
+                    return TRUE;
+                }
+            }
+            break;
+        }
+        return DefWindowProc(hwnd(), umsg, wparam, lparam);
+    }
+};
+
 main_window main_window::create()
 {
+    INITCOMMONCONTROLSEX icce{ sizeof(INITCOMMONCONTROLSEX), ICC_TAB_CLASSES };
+    if (!InitCommonControlsEx(&icce)) {
+        fatal_error(L"InitCommonControlsEx");
+    }
+
     return main_window{main_window_impl::create(nullptr)->hwnd()};
 }
 

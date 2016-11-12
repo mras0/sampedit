@@ -33,3 +33,4 @@ add_executable(${PROJECT_NAME} main.cpp
     win32/main_window.cpp win32/main_window.h
     win32/wavedev.cpp win32/wavedev.h
     )
+target_link_libraries(${PROJECT_NAME} comctl32.lib)
