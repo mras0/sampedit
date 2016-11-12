@@ -64,30 +64,6 @@ private:
 
 class mixer {
 public:
-    explicit mixer(int channels)
-        : channels_(channels)
-        , mix_buffer_(buffer_size)
-        , wavedev_(sample_rate, buffer_size, [this](short* s, size_t count) { assert(count*2 == buffer_size); render(s); }) {
-    }
-
-    void at_next_tick(job_queue::job_type job) {
-        at_next_tick_.push(job);
-    }
-
-    void play(int channel, const ::sample& s, float freq) {
-        assert(channel >= 0 && channel < channels_.size());
-        channels_[channel].play(s, freq);
-    }
-
-    void key_off(int channel) {
-        assert(channel >= 0 && channel < channels_.size());
-        channels_[channel].key_off();
-    }
-
-private:
-    static constexpr int sample_rate = 44100;
-    static constexpr int buffer_size = 4096;
-
     class channel {
     public:
         explicit channel() {
@@ -104,6 +80,10 @@ private:
             state_  = state::playing_first;
         }
 
+        void volume(float volume) {
+            volume_ = volume;
+        }
+
         void mix(float* stero_buffer, int num_stereo_samples) {
             if (state_ == state::not_playing) return;
             assert(sample_);
@@ -118,7 +98,7 @@ private:
                         state_ = state::looping;
                         continue;
                     } else {
-                        wprintf(L"End of sample at %f\n", pos_);
+                        //wprintf(L"End of sample at %f\n", pos_);
                         state_ = state::not_playing;
                         break;
                     }
@@ -126,13 +106,13 @@ private:
 
                 const int now = std::min(samples_till_end, num_stereo_samples);
                 assert(now > 0);
-                do_mix(stero_buffer, now, *sample_, pos_, incr_);
+                do_mix(stero_buffer, now, *sample_, pos_, incr_, volume_, volume_);
                 num_stereo_samples -= now;
                 stero_buffer       += 2* now;
                 pos_               += incr_ * now;
             }
 
-            #if 0
+#if 0
             while (pos_ < sample_->length() && num_stereo_samples) {
                 const auto s = sample_->get_linear(pos_);
                 stero_buffer[0] += s;
@@ -141,27 +121,47 @@ private:
                 stero_buffer  += 2;
                 num_stereo_samples--;
             }
-            #endif
+#endif
         }
 
     private:
         const ::sample* sample_ = nullptr;
         float           pos_;
         float           incr_;
+        float           volume_;
         enum class state {
             not_playing,
             playing_first,
             looping,
         } state_ = state::not_playing;
 
-        static void do_mix(float* stero_buffer, int num_stereo_samples, const sample& samp, float pos, float incr) {
+        static void do_mix(float* stero_buffer, int num_stereo_samples, const sample& samp, float pos, float incr, float lvol, float rvol) {
             for (int i = 0; i < num_stereo_samples; ++i) {
                 const auto s = samp.get_linear(pos + i * incr);
-                stero_buffer[i*2+0] += s;
-                stero_buffer[i*2+1] += s;
+                stero_buffer[i*2+0] += s * lvol;
+                stero_buffer[i*2+1] += s * rvol;
             }
         }
     };
+
+    explicit mixer(int channels)
+        : channels_(channels)
+        , mix_buffer_(buffer_size)
+        , wavedev_(sample_rate, buffer_size, [this](short* s, size_t count) { assert(count*2 == buffer_size); render(s); }) {
+    }
+
+    void at_next_tick(job_queue::job_type job) {
+        at_next_tick_.push(job);
+    }
+
+    channel& get_channel(int index) {
+        return channels_[index];
+    }
+
+
+private:
+    static constexpr int sample_rate = 44100;
+    static constexpr int buffer_size = 4096;
 
     std::vector<channel> channels_;
     std::vector<float>   mix_buffer_;
@@ -228,6 +228,13 @@ private:
 class mod_player {
 public:
     explicit mod_player(const module& mod, mixer& m) : mod_(mod), mixer_(m) {
+        for (int i = 0; i < num_channels; ++i) {
+            channels_.emplace_back(*this, m.get_channel(i));
+        }
+    }
+
+    void set_samples(std::vector<sample>* samples) {
+        samples_ = samples;
     }
 
     const module& mod() const { return mod_; }
@@ -243,61 +250,17 @@ public:
     void on_position_changed(const callback_function_type<position>& cb) {
         on_position_changed_.subscribe(cb);
     }
-    
-private:
-    module mod_;
-    mixer& mixer_;
-    int      speed_ = 6;     // Number of ticks per row 1..127
-    int      bpm_   = 125;   // BPM, 2*bpm/5 ticks per second
-    int      order_ = 0;     // Position in order table 0..song length-1
-    int      row_ = -1;      // Current row in pattern
-    int      tick_ = 6;      // Current tick 0..speed
 
-    event<position> on_position_changed_;
+    static constexpr int num_channels = 4;
+    static constexpr int num_rows     = 64;
+    static constexpr int max_volume   = 64;
 
-    void schedule() {
-        mixer_.at_next_tick([this] { tick(); });
+    static float period_to_freq(int period) {
+        return 7159090.5f / (period * 2);
     }
 
-    void process_row() {
-        
-    }
-
-    void tick() {
-        if (++tick_ >= speed_) {
-            tick_ = 0;
-            if (++row_ >= 64) {
-                row_ = 0;
-            }
-            process_row();
-            on_position_changed_(position{order_, mod_.order[order_], row_});
-        } else {
-            // Tick
-        }
-        schedule();
-    }
-};
-
-class mod_grid : public virtual_grid {
-public:
-    explicit mod_grid(const module& mod) : mod_(mod) {
-    }
-
-private:
-    const module& mod_;
-
-    virtual int do_rows() const override {
-        return 64;
-    }
-
-    virtual std::vector<int> do_column_widths() const override {
-        constexpr int w = 10;
-        return { 2, w, w, w, w };
-    }
 
     static piano_key period_to_piano_key(int period) {
-        //const float sample_rate = 7159090.5f / (period * 2);
-
         /*
         Finetune 0
         C    C#   D    D#   E    F    F#   G    G#   A    A#   B
@@ -325,9 +288,139 @@ private:
         return piano_key::OFF;
     }
 
+private:
+    class channel {
+    public:
+        explicit channel(mod_player& player, mixer::channel& mix_chan) : player_(player), mix_chan_(mix_chan) {}
+
+        void set_sample(int sample) {
+            assert(sample >= 1 && sample <= 32);
+            sample_ = sample;
+            volume(mod_sample().volume);
+        }
+
+        void set_period(int period) {
+            if (player_.samples_) {
+                assert(sample_);
+                mix_chan_.play((*player_.samples_)[sample_-1], period_to_freq(period));
+            }
+        }
+
+        void process_effect(int tick, int effect) {
+            assert(effect);
+            const int xy = effect&0xff;
+            const int x  = xy>>4;
+            const int y  = xy&0xf;
+            switch (effect>>8) {
+            case 0xC: // Set volume
+                if (tick == 0) {
+                    mix_chan_.volume(xy/64.0f);
+                }
+                return;
+            case 0xE:
+                switch (x) {
+                case 0xA: // EAx Fine volume slide up
+                    if (tick == 0) {
+                        volume(std::min(max_volume, volume() + 1));
+                    }
+                    return;
+                }
+                break;
+            }
+            wprintf(L"Unhandled effect %03X\n", effect);
+        }
+
+    private:
+        mod_player&     player_;
+        mixer::channel& mix_chan_;
+        int             sample_ = 0;
+        int             volume_ = 0;
+
+        int volume() const { return volume_; }
+
+        void volume(int vol) {
+            assert(vol >= 0 && vol <= max_volume);
+            volume_ = vol;
+            mix_chan_.volume(static_cast<float>(vol) / max_volume);
+        }
+
+        const module_sample& mod_sample() const {
+            assert(sample_ >= 1 && sample_ <= 32);
+            return player_.mod_.samples[sample_ - 1];
+        }
+    };
+
+    module mod_;
+    mixer& mixer_;
+    int      speed_ = 6;     // Number of ticks per row 1..127
+    int      bpm_   = 125;   // BPM, 2*bpm/5 ticks per second
+    int      order_ = 0;     // Position in order table 0..song length-1
+    int      row_ = -1;      // Current row in pattern
+    int      tick_ = 6;      // Current tick 0..speed
+    std::vector<channel> channels_;
+
+    std::vector<sample>* samples_ = nullptr;
+    event<position> on_position_changed_;
+
+    void schedule() {
+        mixer_.at_next_tick([this] { tick(); });
+    }
+
+    void process_row() {
+        for (int ch = 0; ch < num_channels; ++ch) {
+            auto& channel = channels_[ch];
+            const auto& note = mod_.at(order_, row_)[ch];
+            if (note.sample) { 
+                channel.set_sample(note.sample);
+            }
+            if (note.period) {
+                channel.set_period(note.period);
+            }
+        }
+    }
+
+    void tick() {
+        if (++tick_ >= speed_) {
+            tick_ = 0;
+            if (++row_ >= num_rows) {
+                row_ = 0;
+            }
+            process_row();
+            on_position_changed_(position{order_, mod_.order[order_], row_});
+        } else {
+            // Tick
+        }
+        for (int ch = 0; ch < num_channels; ++ch) {
+            auto& channel = channels_[ch];
+            const auto& note = mod_.at(order_, row_)[ch];
+            if (note.effect) {
+                channel.process_effect(tick_, note.effect);
+            }
+        }
+        schedule();
+    }
+};
+
+class mod_grid : public virtual_grid {
+public:
+    explicit mod_grid(const module& mod) : mod_(mod) {
+    }
+
+private:
+    const module& mod_;
+
+    virtual int do_rows() const override {
+        return 64;
+    }
+
+    virtual std::vector<int> do_column_widths() const override {
+        constexpr int w = 10;
+        return { 2, w, w, w, w };
+    }
+
     virtual std::string do_cell_value(int row, int column) const override {
-        assert(row >= 0 && row < 64);
-        assert(row >= 0 && column < 5);
+        assert(row >= 0 && row < mod_player::num_rows);
+        assert(row >= 0 && column < mod_player::num_channels+1);
         std::ostringstream ss;
         ss << std::hex << std::setfill('0') << std::uppercase;
         if (column == 0) {
@@ -335,7 +428,7 @@ private:
         } else {
             const auto& note = mod_.at(0, row)[column-1];
             if (note.period) {
-                ss << piano_key_to_string(period_to_piano_key(note.period));
+                ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
             } else {
                 ss << "...";
             }
@@ -377,6 +470,7 @@ int main(int argc, char* argv[])
                     samples.back().loop_length(s.loop_length);
                 }
             }
+            mod_player_->set_samples(&samples);
             grid.reset(new mod_grid{mod});
         } else {
             samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
@@ -387,14 +481,14 @@ int main(int argc, char* argv[])
 
         main_wnd.on_piano_key_pressed([&](piano_key key) {
             if (key == piano_key::OFF) {
-                m.at_next_tick([&] { m.key_off(0); } );
+                m.at_next_tick([&] { m.get_channel(0).key_off(); } );
                 return;
             }
             const int idx = main_wnd.current_sample_index();
             if (idx < 0 || idx >= samples.size()) return;
             const auto freq = piano_key_to_freq(key, piano_key::C_5, samples[idx].c5_rate());
             wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
-            m.at_next_tick([&m, &samples, idx, freq] { m.play(0, samples[idx], freq); } );
+            m.at_next_tick([&m, &samples, idx, freq] { m.get_channel(0).play(samples[idx], freq); } );
         });
 
         ShowWindow(main_wnd.hwnd(), SW_SHOW);
