@@ -79,6 +79,7 @@ private:
     X(WM_DESTROY, (d.on_destroy(), 0)) \
     X(WM_SIZE, (d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)), 0)) \
     X(WM_PAINT, (d.on_paint(), 0)) \
+    X(WM_ERASEBKGND, (d.on_erase_background(reinterpret_cast<HDC>(wparam)) ? TRUE : FALSE)) \
     X(WM_CTLCOLORSTATIC, d.on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam))) \
     X(WM_KEYDOWN, (d.on_key_down(static_cast<int>(wparam), static_cast<unsigned>(lparam)), 0)) \
 

@@ -97,6 +97,10 @@ private:
         return (size_.y / 2) + static_cast<int>(0.5 + val * (size_.y / 2 - y_border));
     }
 
+    bool on_erase_background(HDC) {
+        return true;
+    }
+
     void paint(HDC hdc, const RECT& paint_rect) {
         FillRect(hdc, &paint_rect, background_brush_.get());
         if (size_.x <= 2*x_border || size_.y <= 2*y_border) return;
@@ -163,9 +167,6 @@ private:
 
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
-        case WM_ERASEBKGND:
-            return TRUE;
-
         case WM_LBUTTONDOWN:
             assert(state_ == state::normal);
             if (sample_) {
