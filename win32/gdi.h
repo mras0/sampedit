@@ -60,5 +60,6 @@ gdi_obj_restorer select(const dc_ptr& dc, const gdi_obj_ptr<T>& obj) {
 }
 
 font_ptr create_default_font(int height);
+font_ptr create_default_tt_font(int height);
 
 #endif

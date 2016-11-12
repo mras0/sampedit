@@ -1,5 +1,6 @@
 #include <win32/main_window.h>
 #include <win32/sample_window.h>
+#include <win32/pattern_edit.h>
 #include <win32/gdi.h>
 #include <sstream>
 #include <iomanip>
@@ -8,9 +9,9 @@
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #include <commctrl.h>
 
-class sample_edit_window : public window_base<sample_edit_window> {
+class sample_edit : public window_base<sample_edit> {
 public:
-    ~sample_edit_window() = default;
+    ~sample_edit() = default;
 
     void set_samples(const std::vector<sample>& s) {
         samples_ = &s;
@@ -26,14 +27,14 @@ public:
     }
 
 private:
-    friend window_base<sample_edit_window>;
+    friend window_base<sample_edit>;
 
-    explicit sample_edit_window() 
+    explicit sample_edit() 
         : background_brush_(create_background_brush())
         , font_(create_default_font(info_font_height)) {
     }
 
-    static const wchar_t* class_name() { return L"sample_edit_window"; }
+    static const wchar_t* class_name() { return L"sample_edit"; }
 
     const std::vector<sample>* samples_ = nullptr;
 
@@ -108,9 +109,7 @@ private:
             return reinterpret_cast<LRESULT>(on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam)));
 
         case WM_KEYDOWN:
-            if (wparam == VK_ESCAPE) {
-                SendMessage(hwnd(), WM_CLOSE, 0, 0);
-            } else if (wparam == VK_SPACE) {
+            if (wparam == VK_SPACE) {
                 on_piano_key_pressed_(piano_key::OFF);
             } else if (wparam == VK_OEM_PLUS) {
                 if (samples_) {
@@ -153,15 +152,15 @@ public:
     ~main_window_impl() = default;
 
     void set_samples(const std::vector<sample>& s) {
-        sample_edit_window_->set_samples(s);
+        sample_edit_->set_samples(s);
     }
 
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
-        sample_edit_window_->on_piano_key_pressed(cb);
+        sample_edit_->on_piano_key_pressed(cb);
     }
 
     int current_sample_index() const {
-        return sample_edit_window_->current_sample_index();
+        return sample_edit_->current_sample_index();
     }
 
 private:
@@ -190,20 +189,42 @@ private:
         tab_pages_.push_back(wnd);
     }
 
-    void select_tab_page(int page) {
+    HWND current_tab_wnd() {
+        const int page = TabCtrl_GetCurSel(tab_control_wnd_);
+        assert(page >= 0 && page < tab_pages_.size());
+        return tab_pages_[page];
+    }
+
+    bool on_tab_page_switching() {
+        ShowWindow(current_tab_wnd(), SW_HIDE);
+        return false; // false = allow tab switch
+    }
+
+    void on_tab_page_switched() {
+        const int page = TabCtrl_GetCurSel(tab_control_wnd_);
         assert(page >= 0 && page < tab_pages_.size());
         RECT rect;
         GetClientRect(tab_control_wnd_, &rect);
         TabCtrl_AdjustRect(tab_control_wnd_, FALSE, &rect);
-        SetWindowPos(tab_pages_[page], nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
-        ShowWindow(tab_pages_[page], SW_SHOW);
-        SetFocus(tab_pages_[page]);
+        HWND const tab_wnd = current_tab_wnd();
+        SetWindowPos(tab_wnd, nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(tab_wnd, SW_SHOW);
+    }
+
+    void set_tab_page(int page) {
+        if (page != TabCtrl_GetCurSel(tab_control_wnd_) && page < static_cast<int>(tab_pages_.size())) {
+            if (!on_tab_page_switching()) {
+                TabCtrl_SetCurSel(tab_control_wnd_, page);
+                on_tab_page_switched();
+            }
+        }
     }
 
     //
     // Tab pages
     //
-    sample_edit_window* sample_edit_window_;
+    pattern_edit   pattern_edit_;
+    sample_edit*   sample_edit_;
 
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
@@ -212,9 +233,10 @@ private:
                 if ((tab_control_wnd_ = CreateWindow(WC_TABCONTROL, L"", WS_CHILD|WS_CLIPSIBLINGS|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr)) == nullptr) {
                     fatal_error(L"CreateWindow(WC_TABCONTROL)");
                 }
-                sample_edit_window_ = sample_edit_window::create(tab_control_wnd_);
-                add_tab_page(L"Track", CreateWindow(L"STATIC", L"Track", WS_CHILD|WS_VISIBLE, 0, 0, 400, 100, tab_control_wnd_, nullptr, nullptr, nullptr));
-                add_tab_page(L"Sample", sample_edit_window_->hwnd());
+                sample_edit_  = sample_edit::create(tab_control_wnd_);
+                pattern_edit_ = pattern_edit::create(tab_control_wnd_);
+                add_tab_page(L"Pattern", pattern_edit_.hwnd());
+                add_tab_page(L"Sample", sample_edit_->hwnd());
             }
             break;
 
@@ -224,29 +246,30 @@ private:
 
         case WM_SIZE:
             SetWindowPos(tab_control_wnd_, nullptr, 0, 0, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), SWP_NOZORDER | SWP_NOACTIVATE);
-            select_tab_page(TabCtrl_GetCurSel(tab_control_wnd_));
+            on_tab_page_switched();
             break;
 
-        case WM_SETFOCUS: {
-                const int page = TabCtrl_GetCurSel(tab_control_wnd_);
-                assert(page >= 0 && page < tab_pages_.size());
-                SetFocus(tab_pages_[page]);
+        case WM_KEYDOWN:
+            switch (wparam) {
+            case '0': case '1': case '2': case '3': case '4':
+            case '5': case '6': case '7': case '8': case '9':
+                {
+                    set_tab_page(static_cast<int>(wparam == '0' ? 10 : wparam - '0') - 1);
+                }
+                return 0;
+            case VK_ESCAPE:
+                SendMessage(hwnd(), WM_CLOSE, 0, 0);
+                return 0;
             }
-            break;
-
+            return SendMessage(current_tab_wnd(), umsg, wparam, lparam);
 
         case WM_NOTIFY:
             switch (reinterpret_cast<const NMHDR*>(lparam)->code) {
-            case TCN_SELCHANGING: {
-                    const int page = TabCtrl_GetCurSel(tab_control_wnd_);
-                    assert(page >= 0 && page < tab_pages_.size());
-                    ShowWindow(tab_pages_[page], SW_HIDE);
-                    return FALSE; // Allow change
-                }
-            case TCN_SELCHANGE: {
-                    select_tab_page(TabCtrl_GetCurSel(tab_control_wnd_));
-                    return TRUE;
-                }
+            case TCN_SELCHANGING:              
+                return on_tab_page_switching();
+            case TCN_SELCHANGE:
+                on_tab_page_switched();
+                return TRUE;
             }
             break;
         }
