@@ -75,9 +75,14 @@ private:
     };
 
 #define MSG_HANDLERS(X) \
+    X(WM_CREATE, (d.on_create() ? 0 : -1)) \
+    X(WM_DESTROY, (d.on_destroy(), 0)) \
     X(WM_SIZE, (d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)), 0)) \
     X(WM_PAINT, (d.on_paint(), 0)) \
+    X(WM_CTLCOLORSTATIC, d.on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam))) \
+    X(WM_KEYDOWN, (d.on_key_down(static_cast<int>(wparam), static_cast<unsigned>(lparam)), 0)) \
 
+// Keep the above line blank to allow a backslash on the last line of the MSG_HANDLERS macro
 
 #define IMPL_HANDLER(msg, expr) \
 struct msg ## _handler : public handler_base { \
@@ -91,26 +96,9 @@ struct msg ## _handler : public handler_base { \
     MSG_HANDLERS(IMPL_HANDLER);
 #undef IMPL_HANDLER
 
-
-#if 0
-    struct WM_SIZE_handler : public handler_base {
-        using handler_base::invoke;
-        template<typename D>
-        static LRESULT invoke(D& d, UINT, WPARAM wparam, LPARAM lparam, typename std::enable_if<true, decltype((d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)), 0))>::type*) {
-            d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
-            return 0;
-        }
-    };
-
-    struct WM_PAINT_handler : public handler_base {
-        using handler_base::invoke;
-        template<typename D>
-        static LRESULT invoke(D& d, UINT, WPARAM, LPARAM, typename std::enable_if<true, decltype(d.on_paint())>::type*) {
-            d.on_paint();
-            return 0;
-        }
-    };
-#endif
+    LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
+        return DefWindowProc(hwnd(), umsg, wparam, lparam);
+    }
 
     static LRESULT CALLBACK s_wndproc(HWND hwnd, UINT umsg, WPARAM wparam, LPARAM lparam) {
         Derived* self;
@@ -126,9 +114,8 @@ struct msg ## _handler : public handler_base { \
         if (self) {
             auto& derived = static_cast<Derived&>(*self);
             switch (umsg) {
-#define HANDLER_CASE(msg) case msg: res = msg ## _handler::invoke(derived, umsg, wparam, lparam, nullptr); break
-                HANDLER_CASE(WM_SIZE);
-                HANDLER_CASE(WM_PAINT);
+#define HANDLER_CASE(msg, expr) case msg: res = msg ## _handler::invoke(derived, umsg, wparam, lparam, nullptr); break;
+                MSG_HANDLERS(HANDLER_CASE);
 #undef HANDLER_CASE
             default:
                 res = derived.wndproc(umsg, wparam, lparam);

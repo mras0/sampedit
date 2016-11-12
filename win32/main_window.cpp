@@ -9,6 +9,11 @@
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #include <commctrl.h>
 
+void set_font(HWND window, const font_ptr& font) {
+    assert(font);
+    SendMessage(window, WM_SETFONT, reinterpret_cast<WPARAM>(font.get()), 0);
+}
+
 class sample_edit : public window_base<sample_edit> {
 public:
     ~sample_edit() = default;
@@ -66,84 +71,68 @@ private:
         InvalidateRect(hwnd(), nullptr, TRUE);
     }
 
+    HWND create_label() {
+        HWND label_wnd = CreateWindow(L"STATIC", L"", WS_CHILD|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr);
+        if (!label_wnd) {
+            fatal_error(L"CreateWindow");
+        }
+        set_font(label_wnd, font_);
+        return label_wnd;
+    }
+
+    bool on_create() {
+        sample_wnd_      = sample_window::create(hwnd());
+        sample_info_wnd_ = create_label();
+        zoom_info_wnd_   = create_label();
+        sample_wnd_.on_zoom_change([this](sample_range r) {
+            std::wostringstream wss;
+            wss << "Zoom " << r.x0 << ", " << r.x1;
+            SetWindowText(zoom_info_wnd_, wss.str().c_str());
+        });
+        selection_info_wnd_ = create_label();
+        sample_wnd_.on_selection_change([this](sample_range r) {
+            std::wostringstream wss;
+            wss << "Selection " << r.x0 << ", " << r.x1;
+            SetWindowText(selection_info_wnd_, wss.str().c_str());
+        });
+        return true;
+    }
+
+    void on_size(UINT /*state*/, int cx, int /*cy*/) {
+        constexpr int s_h         = 400;
+        constexpr int text_w      = 200;
+        constexpr int text_offset = 10;
+        SetWindowPos(sample_wnd_.hwnd(), nullptr, 0, 0, cx, s_h, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(sample_info_wnd_, nullptr, text_offset, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(zoom_info_wnd_, nullptr, text_w+text_offset*2, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(selection_info_wnd_, nullptr, text_w*2+text_offset*3, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
     HBRUSH on_color_static(HDC hdc, HWND /*static_wnd*/) {
         SetTextColor(hdc, default_text_color);
         SetBkColor(hdc, default_background_color);
         return background_brush_.get();
     }
 
-    HWND create_label() {
-        HWND label_wnd = CreateWindow(L"STATIC", L"", WS_CHILD|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr);
-        if (!label_wnd) {
-            fatal_error(L"CreateWindow");
-        }
-        SendMessage(label_wnd, WM_SETFONT, reinterpret_cast<WPARAM>(font_.get()), 0);
-        return label_wnd;
-    }
-
-    LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
-        switch (umsg) {
-        case WM_CREATE: {
-                sample_wnd_      = sample_window::create(hwnd());
-                sample_info_wnd_ = create_label();
-                zoom_info_wnd_   = create_label();
-                sample_wnd_.on_zoom_change([this](sample_range r) {
-                    std::wostringstream wss;
-                    wss << "Zoom " << r.x0 << ", " << r.x1;
-                    SetWindowText(zoom_info_wnd_, wss.str().c_str());
-                });
-                selection_info_wnd_ = create_label();
-                sample_wnd_.on_selection_change([this](sample_range r) {
-                    std::wostringstream wss;
-                    wss << "Selection " << r.x0 << ", " << r.x1;
-                    SetWindowText(selection_info_wnd_, wss.str().c_str());
-                });
+    void on_key_down(int vk, unsigned /*extra*/) {
+        if (vk == VK_SPACE) {
+            on_piano_key_pressed_(piano_key::OFF);
+        } else if (vk == VK_OEM_PLUS) {
+            if (samples_) {
+                assert(sample_index_ >= 0);
+                select_sample((sample_index_ + 1) % samples_->size());
             }
-            break;
-
-        case WM_NCDESTROY:
-            PostQuitMessage(0);
-            break;
-
-        case WM_CTLCOLORSTATIC:
-            return reinterpret_cast<LRESULT>(on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam)));
-
-        case WM_KEYDOWN:
-            if (wparam == VK_SPACE) {
-                on_piano_key_pressed_(piano_key::OFF);
-            } else if (wparam == VK_OEM_PLUS) {
-                if (samples_) {
-                    assert(sample_index_ >= 0);
-                    select_sample((sample_index_ + 1) % samples_->size());
-                }
-            } else if (wparam == VK_OEM_MINUS) {
-                if (samples_) {
-                    assert(sample_index_ >= 0);
-                    select_sample(sample_index_ ? sample_index_ - 1 : static_cast<int>(samples_->size()) - 1);
-                }
-            } else {
-                piano_key key = key_to_note(static_cast<int>(wparam));
-                if (key != piano_key::OFF) {
-                    on_piano_key_pressed_(key);
-                } else {
-                    //wprintf(L"Unhandled key %d (0x%X)\n", (int)wparam, (int)wparam);
-                }
+        } else if (vk == VK_OEM_MINUS) {
+            if (samples_) {
+                assert(sample_index_ >= 0);
+                select_sample(sample_index_ ? sample_index_ - 1 : static_cast<int>(samples_->size()) - 1);
             }
-            break;
-
-        case WM_SIZE: {
-                const int w      = GET_X_LPARAM(lparam);
-                const int s_h    = 400;
-                const int text_w = 200;
-                const int text_offset = 10;
-                SetWindowPos(sample_wnd_.hwnd(), nullptr, 0, 0, w, s_h, SWP_NOZORDER | SWP_NOACTIVATE);
-                SetWindowPos(sample_info_wnd_, nullptr, text_offset, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
-                SetWindowPos(zoom_info_wnd_, nullptr, text_w+text_offset*2, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
-                SetWindowPos(selection_info_wnd_, nullptr, text_w*2+text_offset*3, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
-                return 0;
+        } else {
+            piano_key key = key_to_note(vk);
+            if (key != piano_key::OFF) {
+                on_piano_key_pressed_(key);
             }
         }
-        return DefWindowProc(hwnd(), umsg, wparam, lparam);
     }
 };
 
@@ -166,7 +155,7 @@ public:
 private:
     friend window_base<main_window_impl>;
 
-    explicit main_window_impl() {
+    explicit main_window_impl() : tab_font_(create_default_font(14)) {
     }
 
     static const wchar_t* class_name() { return L"main_window"; }
@@ -175,6 +164,7 @@ private:
     // Tabs
     //
     HWND              tab_control_wnd_;
+    font_ptr          tab_font_;
     std::vector<HWND> tab_pages_;
 
     void add_tab_page(const wchar_t* text, HWND wnd) {
@@ -227,44 +217,44 @@ private:
     pattern_edit   pattern_edit_;
     sample_edit*   sample_edit_;
 
+    bool on_create() {
+        SetWindowText(hwnd(), L"SampEdit");
+        if ((tab_control_wnd_ = CreateWindow(WC_TABCONTROL, L"", WS_CHILD|WS_CLIPSIBLINGS|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr)) == nullptr) {
+            fatal_error(L"CreateWindow(WC_TABCONTROL)");
+        }
+        set_font(tab_control_wnd_, tab_font_);
+        sample_edit_  = sample_edit::create(tab_control_wnd_);
+        pattern_edit_ = pattern_edit::create(tab_control_wnd_);
+        add_tab_page(L"Pattern", pattern_edit_.hwnd());
+        add_tab_page(L"Sample", sample_edit_->hwnd());
+        return true;
+    }
+
+    void on_destroy() {
+        PostQuitMessage(0);
+    }
 
     void on_size(UINT /*state*/, int cx, int cy) {
         SetWindowPos(tab_control_wnd_, nullptr, 0, 0, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
         on_tab_page_switched();
     }
 
+    void on_key_down(int vk, unsigned extra) {
+        switch (vk) {
+        case '0': case '1': case '2': case '3': case '4':
+        case '5': case '6': case '7': case '8': case '9':
+            set_tab_page((vk == '0' ? 10 : vk - '0') - 1);
+            break;
+        case VK_ESCAPE:
+            SendMessage(hwnd(), WM_CLOSE, 0, 0);
+            break;
+        default:
+            SendMessage(current_tab_wnd(), WM_KEYDOWN, vk, extra);
+        }
+    }
+
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
-        case WM_CREATE: {
-                SetWindowText(hwnd(), L"SampEdit");
-                if ((tab_control_wnd_ = CreateWindow(WC_TABCONTROL, L"", WS_CHILD|WS_CLIPSIBLINGS|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr)) == nullptr) {
-                    fatal_error(L"CreateWindow(WC_TABCONTROL)");
-                }
-                sample_edit_  = sample_edit::create(tab_control_wnd_);
-                pattern_edit_ = pattern_edit::create(tab_control_wnd_);
-                add_tab_page(L"Pattern", pattern_edit_.hwnd());
-                add_tab_page(L"Sample", sample_edit_->hwnd());
-            }
-            break;
-
-        case WM_NCDESTROY:
-            PostQuitMessage(0);
-            break;
-
-        case WM_KEYDOWN:
-            switch (wparam) {
-            case '0': case '1': case '2': case '3': case '4':
-            case '5': case '6': case '7': case '8': case '9':
-                {
-                    set_tab_page(static_cast<int>(wparam == '0' ? 10 : wparam - '0') - 1);
-                }
-                return 0;
-            case VK_ESCAPE:
-                SendMessage(hwnd(), WM_CLOSE, 0, 0);
-                return 0;
-            }
-            return SendMessage(current_tab_wnd(), umsg, wparam, lparam);
-
         case WM_NOTIFY:
             switch (reinterpret_cast<const NMHDR*>(lparam)->code) {
             case TCN_SELCHANGING:              
