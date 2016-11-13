@@ -216,6 +216,15 @@ public:
         int order, pattern, row;
     };
 
+    void skip_to_order(int order) {
+        assert(order >= 0 && order < mod_.num_order);
+        mixer_.at_next_tick([order, this] {
+            // TODO: Process (some) effects...
+            wprintf(L"Skipping to order %d, cur = %d\n", order, order_);
+            order_ = order;
+        });
+    }
+
     void play() {
         schedule();
     }
@@ -400,6 +409,11 @@ private:
                         trig(0);
                     }
                     return;
+                case 0xE: // EEy Pattern delay
+                    if (!tick) {
+                        player_.pattern_delay(y);
+                    }
+                    return;
                 }
                 break;
             case 0xF: // Fxy Set speed
@@ -516,6 +530,7 @@ private:
     int      tick_ = 6;      // Current tick 0..speed
     int      pattern_jump_ = -1;
     int      pattern_break_row_ = -1;
+    int      pattern_delay_ = -1;
     std::vector<channel> channels_;
 
     std::vector<sample>* samples_ = nullptr;
@@ -537,32 +552,35 @@ private:
 
     void next_order() {
         if (++order_ >= mod_.num_order) {
-            order_ = 0;
-            assert(false);
+            order_ = 0; // TODO: Use restart pos
+            assert(!"Song done!");
         }
     }
 
     void tick() {
         if (++tick_ >= speed_) {
             tick_ = 0;
-            if (pattern_jump_ != -1) {
-                order_ = pattern_jump_;
-                row_   = pattern_break_row_ == -1 ? -1 : pattern_break_row_ - 1;
-                wprintf(L"Pattern jump %d, %d\n", order_, row_ + 1);
-            } else if (pattern_break_row_ != -1) {
-                ++order_;
-                row_   = pattern_break_row_ - 1;
-                wprintf(L"Pattern break %d, %d\n", order_, row_ + 1);
-            }
+            if (pattern_delay_ > 0) {
+                --pattern_delay_;
+            } else {
+                pattern_delay_ = -1;
+                if (pattern_jump_ != -1) {
+                    order_ = pattern_jump_;
+                    row_   = pattern_break_row_ == -1 ? -1 : pattern_break_row_ - 1;
+                } else if (pattern_break_row_ != -1) {
+                    next_order();
+                    row_   = pattern_break_row_ - 1;
+                }
 
-            if (++row_ >= num_rows) {
-                row_ = 0;
-                next_order();
+                if (++row_ >= num_rows) {
+                    row_ = 0;
+                    next_order();
+                }
+                process_row();
+                on_position_changed_(position{order_, mod_.order[order_], row_});
             }
-            process_row();
-            on_position_changed_(position{order_, mod_.order[order_], row_});
         } else {
-            // Tick
+            // Intra-row tick
         }
         for (int ch = 0; ch < num_channels; ++ch) {
             auto& channel = channels_[ch];
@@ -585,6 +603,12 @@ private:
         assert(pattern_jump_ == -1);
         pattern_jump_      = order;
         pattern_break_row_ = -1; // A pattern jump after a pattern break makes the break have no effect
+    }
+
+    void pattern_delay(int delay_notes) {
+        if (pattern_delay_ == -1) {
+            pattern_delay_ = delay_notes;
+        }
     }
 };
 
@@ -627,7 +651,7 @@ public:
 
     virtual void do_order_change(int order) override {
         if (order_ != order) {
-            wprintf(L"\n\nNew Order %d\n\n", order);
+            wprintf(L"Order %d, Pattern %d\n", order, mod_.order[order]);
             order_ = order;
         }
     }
@@ -739,6 +763,7 @@ int main(int argc, char* argv[])
                     main_wnd.update_grid(pos.row);
                 });
             });
+            //mod_player_->skip_to_order(20);
             mod_player_->play();
         }
 
