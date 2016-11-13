@@ -73,11 +73,15 @@ public:
             state_ = state::not_playing;
         }
 
-        void play(const ::sample& s, float freq) {
+        void play(const ::sample& s, int pos) {
+            assert(pos >= 0 && pos <= s.length());
             sample_ = &s;
-            pos_    = 0;
-            incr_   = freq / sample_rate;
+            pos_    = static_cast<float>(pos);
             state_  = state::playing_first;
+        }
+
+        void freq(float f) {
+            incr_ = f / sample_rate;
         }
 
         void volume(float volume) {
@@ -90,6 +94,7 @@ public:
 
             while (num_stereo_samples) {
                 const int end = state_ == state::looping ? sample_->loop_start() + sample_->loop_length() : sample_->length();
+                assert(pos_ <= end);
                 const int samples_till_end = static_cast<int>((end - pos_) / incr_);
                 if (!samples_till_end) {
                     if (sample_->loop_length()) {
@@ -111,17 +116,6 @@ public:
                 stero_buffer       += 2* now;
                 pos_               += incr_ * now;
             }
-
-#if 0
-            while (pos_ < sample_->length() && num_stereo_samples) {
-                const auto s = sample_->get_linear(pos_);
-                stero_buffer[0] += s;
-                stero_buffer[1] += s;
-                pos_          += incr_;
-                stero_buffer  += 2;
-                num_stereo_samples--;
-            }
-#endif
         }
 
     private:
@@ -199,32 +193,8 @@ private:
         }
 
         for (size_t i = 0; i < buffer_size; ++i) {
-            s[i] = sample_to_s16(mix_buffer_[i]);
+            s[i] = sample_to_s16(mix_buffer_[i]/(channels_.size()/2));
         }
-    }
-};
-
-#include <iomanip>
-#include <sstream>
-#include <base/virtual_grid.h>
-class test_grid : public virtual_grid {
-public:
-private:
-    virtual int do_rows() const override {
-        return 64;
-    }
-    virtual std::vector<int> do_column_widths() const override {
-        return { 3, 9, 9, 9, 9 };
-    }
-    virtual std::string do_cell_value(int row, int column) const override {
-        std::ostringstream ss;
-        ss << std::hex << std::setfill('0');
-        if (column == 0) {
-            ss << std::setw(2) << row;
-        } else {
-            ss << std::setw(2) << column;
-        }
-        return ss.str();
     }
 };
 
@@ -246,7 +216,7 @@ public:
         int order, pattern, row;
     };
 
-    void play_pattern() {
+    void play() {
         schedule();
     }
 
@@ -258,8 +228,9 @@ public:
     static constexpr int num_rows     = 64;
     static constexpr int max_volume   = 64;
 
-    static float period_to_freq(int period) {
-        return 7159090.5f / (period * 2);
+    static float period_to_freq(int period, int finetune) {
+        assert(finetune >= -8 && finetune < 7);
+        return note_difference_to_scale(finetune / 8.0f) * 7159090.5f / (period * 2);
     }
 
 
@@ -302,13 +273,23 @@ private:
                 sample_ = note.sample;
                 volume(mod_sample().volume);
             }
-            const auto effect = note.effect>>8;
-            if (note.period && effect != 3 && effect != 5) {
-                period_ = note.period;
-                if (note.effect>>4 != 0xED) {
-                    trig();
+            if (note.period) {
+                const auto effect = note.effect>>8;
+                if (effect == 3) {
+                    target_period_ = note.period;
+                } else if (effect == 5) {
+                } else {
+                    set_period(note.period);
+                    if (effect != 9 && note.effect>>4 != 0xED) {
+                        trig(0);
+                    }
                 }
             }
+        }
+
+        void set_period(int period) {
+            period_ = period;
+            mix_chan_.freq(period_to_freq(period_, mod_sample().finetune));
         }
 
         void process_effect(int tick, int effect) {
@@ -317,31 +298,77 @@ private:
             const int x  = xy>>4;
             const int y  = xy&0xf;
             switch (effect>>8) {
-            case 0x3: // Port to note
-                wprintf(L"Ignoring port to note %02X\n", xy);
+            case 0x01: // 1xy Porta down
+                if (tick) {
+                    set_period(period_ - xy);
+                }
                 return;
-            case 0xC: // Set volume
+            case 0x02: // 2xy Porta down
+                if (tick) {
+                    set_period(period_ + xy);
+                }
+                return;
+            case 0x3: // 3xy Porta to note
+                if (tick) {
+                    if (period_ < target_period_) {
+                        set_period(std::min(target_period_, period_ + xy));
+                    } else {
+                        set_period(std::max(target_period_, period_ - xy));
+                    }
+                }
+                return;
+            case 0x8: // 8xy
+                return; // ignored
+            case 0x9: // 9xy Sample offset
+                if (!tick) {
+                    if (xy) sample_offset_ = xy << 8;
+                    trig(sample_offset_);
+                }
+                return;
+            case 0xA: // Axy Volume slide
+                if (tick) {
+                    if (x && y) {
+                    } else if (x > 0) {
+                        do_volume_slide(+x);
+                    } else if (y > 0) {
+                        do_volume_slide(-y);
+                    }
+                }
+                return;
+            case 0xC: // Cxy Set volume
                 if (tick == 0) {
                     mix_chan_.volume(xy/64.0f);
                 }
                 return;
+            case 0xD: // Dxy Pattern break
+                if (tick == 0) {
+                    player_.pattern_break(x*10 + y);
+                }
+                return;
             case 0xE:
                 switch (x) {
-                case 0x0: // E0x Set fiter
+                case 0x0: // E0y Set fiter
                     return;
-                case 0xA: // EAx Fine volume slide up
+                case 0x9: // E9x Retrig note
+                    assert(y);
+                    if (tick && tick % y == 0) {
+                        wprintf(L"RETRIG AT TICK %d\n", tick);
+                        trig(0);
+                    }
+                    return;
+                case 0xA: // EAy Fine volume slide up
                     if (!tick)  {
-                        volume(std::min(max_volume, volume() + 1));
+                        do_volume_slide(+y);
                     }
                     return;
-                case 0xB: // EAx Fine volume slide down
+                case 0xB: // EAy Fine volume slide down
                     if (!tick) {
-                        volume(std::max(0, volume() - 1));
+                        do_volume_slide(-y);
                     }
                     return;
-                case 0xD: // EDx Delay note
+                case 0xD: // EDy Delay note
                     if (tick == y) {
-                        trig();
+                        trig(0);
                     }
                     return;
                 }
@@ -365,6 +392,8 @@ private:
         int             sample_ = 0;
         int             volume_ = 0;
         int             period_ = 0;
+        int             target_period_ = 0;
+        int             sample_offset_ = 0;
 
         int volume() const { return volume_; }
 
@@ -374,15 +403,22 @@ private:
             mix_chan_.volume(static_cast<float>(vol) / max_volume);
         }
 
+        void do_volume_slide(int amount) {
+            volume(std::max(0, std::min(max_volume, volume() + amount)));
+        }
+
         const module_sample& mod_sample() const {
             assert(sample_ >= 1 && sample_ <= 32);
             return player_.mod_.samples[sample_ - 1];
         }
 
-        void trig() {
+        void trig(int offset) {
             if (player_.samples_) {
                 assert(sample_);
-                mix_chan_.play((*player_.samples_)[sample_-1], period_to_freq(period_));
+                auto& s = (*player_.samples_)[sample_-1];
+                if (s.length()) {
+                    mix_chan_.play(s, std::min(s.length(), offset));
+                }
             }
         }
     };
@@ -393,6 +429,7 @@ private:
     int      order_ = 0;     // Position in order table 0..song length-1
     int      row_ = -1;      // Current row in pattern
     int      tick_ = 6;      // Current tick 0..speed
+    int      pattern_break_row_ = -1;
     std::vector<channel> channels_;
 
     std::vector<sample>* samples_ = nullptr;
@@ -410,11 +447,24 @@ private:
         }
     }
 
+    void next_order() {
+        if (++order_ >= mod_.num_order) {
+            order_ = 0;
+            assert(false);
+        }
+    }
+
     void tick() {
         if (++tick_ >= speed_) {
             tick_ = 0;
+            if (pattern_break_row_ != -1) {
+                row_ = pattern_break_row_ - 1;
+                pattern_break_row_ = -1;
+                next_order();
+            }
             if (++row_ >= num_rows) {
                 row_ = 0;
+                next_order();
             }
             process_row();
             on_position_changed_(position{order_, mod_.order[order_], row_});
@@ -430,15 +480,61 @@ private:
         }
         schedule();
     }
+
+    void pattern_break(int row) {
+        assert(row >= 0 && row < num_rows);
+        assert(pattern_break_row_ == -1);
+        pattern_break_row_ = row;
+    }
 };
 
-class mod_grid : public virtual_grid {
+class mod_like_grid : public virtual_grid {
+public:
+    virtual void do_order_change(int order) = 0;
+};
+
+#include <iomanip>
+#include <sstream>
+
+class test_grid : public mod_like_grid {
+public:
+    virtual void do_order_change(int) override {
+    }
+
+private:
+    virtual int do_rows() const override {
+        return 64;
+    }
+    virtual std::vector<int> do_column_widths() const override {
+        return { 3, 9, 9, 9, 9 };
+    }
+    virtual std::string do_cell_value(int row, int column) const override {
+        std::ostringstream ss;
+        ss << std::hex << std::setfill('0');
+        if (column == 0) {
+            ss << std::setw(2) << row;
+        } else {
+            ss << std::setw(2) << column;
+        }
+        return ss.str();
+    }
+};
+
+class mod_grid : public mod_like_grid {
 public:
     explicit mod_grid(const module& mod) : mod_(mod) {
     }
 
+    virtual void do_order_change(int order) override {
+        if (order_ != order) {
+            wprintf(L"\n\nNew Order %d\n\n", order);
+            order_ = order;
+        }
+    }
+
 private:
     const module& mod_;
+    int order_ = 0;
 
     virtual int do_rows() const override {
         return 64;
@@ -457,7 +553,7 @@ private:
         if (column == 0) {
             ss << std::setw(2) << row;
         } else {
-            const auto& note = mod_.at(0, row)[column-1];
+            const auto& note = mod_.at(order_, row)[column-1];
             if (note.period) {
                 ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
             } else {
@@ -487,7 +583,7 @@ int main(int argc, char* argv[])
 
         std::vector<sample> samples;
         std::unique_ptr<mod_player> mod_player_;
-        std::unique_ptr<virtual_grid> grid;
+        std::unique_ptr<mod_like_grid> grid;
         if (argc > 1) {
             mod_player_.reset(new mod_player(load_module(argv[1]), m));
             auto& mod = mod_player_->mod();
@@ -519,7 +615,11 @@ int main(int argc, char* argv[])
             if (idx < 0 || idx >= samples.size()) return;
             const auto freq = piano_key_to_freq(key, piano_key::C_5, samples[idx].c5_rate());
             wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
-            m.at_next_tick([&m, &samples, idx, freq] { m.get_channel(0).play(samples[idx], freq); } );
+            m.at_next_tick([&m, &samples, idx, freq] {
+                auto& ch = m.get_channel(0);
+                ch.freq(freq);
+                ch.play(samples[idx], 0); 
+            });
         });
 
         ShowWindow(main_wnd.hwnd(), SW_SHOW);
@@ -534,11 +634,12 @@ int main(int argc, char* argv[])
 
         if (mod_player_) {
             mod_player_->on_position_changed([&](const mod_player::position& pos) {
-                add_gui_job([&main_wnd, pos] {
+                add_gui_job([&main_wnd, &grid, pos] {
+                    grid->do_order_change(pos.order);
                     main_wnd.update_grid(pos.row);
                 });
             });
-            mod_player_->play_pattern();
+            mod_player_->play();
         }
 
         MSG msg;
