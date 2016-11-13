@@ -275,9 +275,8 @@ private:
             }
             if (note.period) {
                 const auto effect = note.effect>>8;
-                if (effect == 3) {
-                    target_period_ = note.period;
-                } else if (effect == 5) {
+                if (effect == 3 || effect == 5) {
+                    porta_target_period_ = note.period;
                 } else {
                     set_period(note.period);
                     if (effect != 9 && note.effect>>4 != 0xED) {
@@ -287,17 +286,21 @@ private:
             }
         }
 
-        void set_period(int period) {
-            period_ = period;
-            mix_chan_.freq(period_to_freq(period_, mod_sample().finetune));
-        }
-
         void process_effect(int tick, int effect) {
             assert(effect);
             const int xy = effect&0xff;
             const int x  = xy>>4;
             const int y  = xy&0xf;
             switch (effect>>8) {
+            case 0x00: // 0xy Arpeggio
+                if (tick) {
+                    switch (tick % 3) {
+                    case 0: wprintf(L"Ignoring arpeggio +0\n"); break;
+                    case 1: wprintf(L"Ignoring arpeggio +%d\n",x); break;
+                    case 2: wprintf(L"Ignoring arpeggio +%d\n",y); break;
+                    }
+                }
+                return;
             case 0x01: // 1xy Porta down
                 if (tick) {
                     set_period(period_ - xy);
@@ -309,12 +312,29 @@ private:
                 }
                 return;
             case 0x3: // 3xy Porta to note
+                if (xy) porta_speed_ = xy;
                 if (tick) {
-                    if (period_ < target_period_) {
-                        set_period(std::min(target_period_, period_ + xy));
-                    } else {
-                        set_period(std::max(target_period_, period_ - xy));
-                    }
+                    do_porta_to_note();
+                }
+                return;
+            case 0x4: // 4xy Vibrato
+                if (!tick) {
+                    if (x) vib_speed_ = x;
+                    if (y) vib_depth_ = y;
+                } else {
+                    do_vibrato();
+                }
+                return;
+            case 0x5: // 5xy Porta + Voume slide (5xy = 300 + Axy)
+                if (tick) {
+                    do_porta_to_note();
+                    do_volume_slide_xy(x, y);
+                }
+                return;
+            case 0x6: // 6xy Vibrato + Volume slide (6xy = 400 + Axy)
+                if (tick) {
+                    do_vibrato();
+                    do_volume_slide_xy(x, y);
                 }
                 return;
             case 0x8: // 8xy
@@ -327,17 +347,12 @@ private:
                 return;
             case 0xA: // Axy Volume slide
                 if (tick) {
-                    if (x && y) {
-                    } else if (x > 0) {
-                        do_volume_slide(+x);
-                    } else if (y > 0) {
-                        do_volume_slide(-y);
-                    }
+                    do_volume_slide_xy(x, y);
                 }
                 return;
             case 0xC: // Cxy Set volume
                 if (tick == 0) {
-                    mix_chan_.volume(xy/64.0f);
+                    volume(xy);
                 }
                 return;
             case 0xD: // Dxy Pattern break
@@ -352,7 +367,6 @@ private:
                 case 0x9: // E9x Retrig note
                     assert(y);
                     if (tick && tick % y == 0) {
-                        wprintf(L"RETRIG AT TICK %d\n", tick);
                         trig(0);
                     }
                     return;
@@ -383,7 +397,7 @@ private:
                 }
                 return;
             }
-            wprintf(L"Unhandled effect %03X\n", effect);
+            if (!tick) wprintf(L"Unhandled effect %03X\n", effect);
         }
 
     private:
@@ -392,7 +406,11 @@ private:
         int             sample_ = 0;
         int             volume_ = 0;
         int             period_ = 0;
-        int             target_period_ = 0;
+        int             porta_target_period_ = 0;
+        int             porta_speed_ = 0;
+        int             vib_depth_ = 0;
+        int             vib_speed_ = 0;
+        int             vib_pos_   = 0;
         int             sample_offset_ = 0;
 
         int volume() const { return volume_; }
@@ -403,9 +421,54 @@ private:
             mix_chan_.volume(static_cast<float>(vol) / max_volume);
         }
 
+        void set_voice_period(int period) {
+            mix_chan_.freq(period_to_freq(period, mod_sample().finetune));
+        }
+
+        void set_period(int period) {
+            period_ = period;
+            set_voice_period(period_);
+        }
+
         void do_volume_slide(int amount) {
             volume(std::max(0, std::min(max_volume, volume() + amount)));
         }
+
+        void do_volume_slide_xy(int x, int y) {
+            if (x && y) {
+            } else if (x > 0) {
+                do_volume_slide(+x);
+            } else if (y > 0) {
+                do_volume_slide(-y);
+            }
+        }
+
+        void do_porta_to_note() {
+            if (period_ < porta_target_period_) {
+                set_period(std::min(porta_target_period_, period_ + porta_speed_));
+            } else {
+                set_period(std::max(porta_target_period_, period_ - porta_speed_));
+            }
+        }
+
+        void do_vibrato() {
+            static const uint8_t sinetable[32] ={
+                0, 24, 49, 74, 97,120,141,161,
+                180,197,212,224,235,244,250,253,
+                255,253,250,244,235,224,212,197,
+                180,161,141,120, 97, 74, 49, 24
+            };
+
+            assert(vib_pos_ >= -32 && vib_pos_ <= 31);
+
+            const int delta = sinetable[vib_pos_ & 31];
+
+            set_voice_period(period_ + (((vib_pos_ < 0 ? -delta : delta) * vib_depth_) / 128));
+
+            vib_pos_ += vib_speed_;
+            if (vib_pos_ > 31) vib_pos_ -= 64;
+        }
+
 
         const module_sample& mod_sample() const {
             assert(sample_ >= 1 && sample_ <= 32);
@@ -413,6 +476,7 @@ private:
         }
 
         void trig(int offset) {
+            vib_pos_ = 0;
             if (player_.samples_) {
                 assert(sample_);
                 auto& s = (*player_.samples_)[sample_-1];
@@ -567,7 +631,7 @@ private:
             }
             ss << " ";
             if (note.effect) {
-                ss << std::setw(2) << (int)note.effect;
+                ss << std::setw(3) << (int)note.effect;
             } else {
                 ss << "...";
             }
