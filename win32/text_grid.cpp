@@ -50,8 +50,10 @@ private:
         SetBkColor(hdc, default_background_color);
 
         auto old_font = select(hdc, font_);
-        SIZE font_size;
-        GetTextExtentPoint(hdc, TEXT("0"), 1, &font_size);
+
+        TEXTMETRIC tm;
+        GetTextMetrics(hdc, &tm);
+        const SIZE font_size{tm.tmMaxCharWidth, tm.tmHeight};
 
         const int x_spacing = font_size.cy*2;
         const int y_spacing = 1;

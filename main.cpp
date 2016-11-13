@@ -293,14 +293,15 @@ private:
             const int y  = xy&0xf;
             switch (effect>>8) {
             case 0x00: // 0xy Arpeggio
-                if (tick) {
-                    switch (tick % 3) {
-                    case 0: wprintf(L"Ignoring arpeggio +0\n"); break;
-                    case 1: wprintf(L"Ignoring arpeggio +%d\n",x); break;
-                    case 2: wprintf(L"Ignoring arpeggio +%d\n",y); break;
-                    }
-                }
-                return;
+                //if (tick) {
+                //    switch (tick % 3) {
+                //    case 0: wprintf(L"Ignoring arpeggio +0\n"); break;
+                //    case 1: wprintf(L"Ignoring arpeggio +%d\n",x); break;
+                //    case 2: wprintf(L"Ignoring arpeggio +%d\n",y); break;
+                //    }
+                //}
+                //return;
+                break;
             case 0x01: // 1xy Porta down
                 if (tick) {
                     set_period(period_ - xy);
@@ -350,6 +351,11 @@ private:
                     do_volume_slide_xy(x, y);
                 }
                 return;
+            case 0xB: // Bxy Pattern jump
+                if (!tick) {
+                    player_.pattern_jump(xy);
+                }
+                return;
             case 0xC: // Cxy Set volume
                 if (tick == 0) {
                     volume(xy);
@@ -378,6 +384,11 @@ private:
                 case 0xB: // EAy Fine volume slide down
                     if (!tick) {
                         do_volume_slide(-y);
+                    }
+                    return;
+                case 0xC: // ECy Cut note
+                    if (tick == y) {
+                        volume(0);
                     }
                     return;
                 case 0xD: // EDy Delay note
@@ -493,6 +504,7 @@ private:
     int      order_ = 0;     // Position in order table 0..song length-1
     int      row_ = -1;      // Current row in pattern
     int      tick_ = 6;      // Current tick 0..speed
+    int      pattern_jump_ = -1;
     int      pattern_break_row_ = -1;
     std::vector<channel> channels_;
 
@@ -504,6 +516,8 @@ private:
     }
 
     void process_row() {
+        pattern_break_row_ = -1;
+        pattern_jump_      = -1;
         for (int ch = 0; ch < num_channels; ++ch) {
             auto& channel = channels_[ch];
             const auto& note = mod_.at(order_, row_)[ch];
@@ -521,11 +535,16 @@ private:
     void tick() {
         if (++tick_ >= speed_) {
             tick_ = 0;
-            if (pattern_break_row_ != -1) {
-                row_ = pattern_break_row_ - 1;
-                pattern_break_row_ = -1;
-                next_order();
+            if (pattern_jump_ != -1) {
+                order_ = pattern_jump_;
+                row_   = pattern_break_row_ == -1 ? -1 : pattern_break_row_ - 1;
+                wprintf(L"Pattern jump %d, %d\n", order_, row_ + 1);
+            } else if (pattern_break_row_ != -1) {
+                ++order_;
+                row_   = pattern_break_row_ - 1;
+                wprintf(L"Pattern break %d, %d\n", order_, row_ + 1);
             }
+
             if (++row_ >= num_rows) {
                 row_ = 0;
                 next_order();
@@ -549,6 +568,13 @@ private:
         assert(row >= 0 && row < num_rows);
         assert(pattern_break_row_ == -1);
         pattern_break_row_ = row;
+    }
+
+    void pattern_jump(int order) {
+        assert(order_ >= 0 && order_ < mod_.num_order);
+        assert(pattern_jump_ == -1);
+        pattern_jump_      = order;
+        pattern_break_row_ = -1; // A pattern jump after a pattern break makes the break have no effect
     }
 };
 
