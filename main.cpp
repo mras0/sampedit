@@ -228,16 +228,21 @@ public:
     static constexpr int num_rows     = 64;
     static constexpr int max_volume   = 64;
 
+    static constexpr float clock_rate = 7159090.5f;
+
     static float period_to_freq(int period, int finetune) {
         assert(finetune >= -8 && finetune < 7);
-        return note_difference_to_scale(finetune / 8.0f) * 7159090.5f / (period * 2);
+        return note_difference_to_scale(finetune / 8.0f) * clock_rate / (period * 2);
     }
 
+    static int freq_to_period(float freq) {
+        return static_cast<int>(clock_rate / (2 * freq));
+    }
 
     static piano_key period_to_piano_key(int period) {
         /*
         Finetune 0
-        C    C#   D    D#   E    F    F#   G    G#   A    A#   B
+                   C    C#   D    D#   E    F    F#   G    G#   A    A#   B
         Octave 0:1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907
         Octave 1: 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453
         Octave 2: 428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226
@@ -293,15 +298,14 @@ private:
             const int y  = xy&0xf;
             switch (effect>>8) {
             case 0x00: // 0xy Arpeggio
-                //if (tick) {
-                //    switch (tick % 3) {
-                //    case 0: wprintf(L"Ignoring arpeggio +0\n"); break;
-                //    case 1: wprintf(L"Ignoring arpeggio +%d\n",x); break;
-                //    case 2: wprintf(L"Ignoring arpeggio +%d\n",y); break;
-                //    }
-                //}
-                //return;
-                break;
+                if (tick) {
+                    switch (tick % 3) {
+                    case 0: do_arpeggio(0); break;
+                    case 1: do_arpeggio(x); break;
+                    case 2: do_arpeggio(y); break;
+                    }
+                }
+                return;
             case 0x01: // 1xy Porta down
                 if (tick) {
                     set_period(period_ - xy);
@@ -439,6 +443,12 @@ private:
         void set_period(int period) {
             period_ = period;
             set_voice_period(period_);
+        }
+
+        void do_arpeggio(int amount) {
+            const int res_per = freq_to_period(period_to_freq(period_, 0) * note_difference_to_scale(static_cast<float>(amount)));
+            //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
+            set_voice_period(res_per);
         }
 
         void do_volume_slide(int amount) {
