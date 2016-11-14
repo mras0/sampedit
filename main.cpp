@@ -383,6 +383,11 @@ private:
                 switch (x) {
                 case 0x0: // E0y Set fiter
                     return;
+                case 0x6: // E6y Pattern loop
+                    if (!tick) {
+                        player_.pattern_loop(y);
+                    }
+                    return;
                 case 0x9: // E9x Retrig note
                     assert(y);
                     if (tick && tick % y == 0) {
@@ -531,6 +536,8 @@ private:
     int      pattern_jump_ = -1;
     int      pattern_break_row_ = -1;
     int      pattern_delay_ = -1;
+    int      pattern_loop_row_ = -1;
+    int      pattern_loop_counter_ = -1;
     std::vector<channel> channels_;
 
     std::vector<sample>* samples_ = nullptr;
@@ -572,6 +579,19 @@ private:
                     row_   = pattern_break_row_ - 1;
                 }
 
+                if (pattern_loop_row_ != -1) {
+                    if (pattern_loop_counter_ > 0) {
+                        assert(pattern_loop_row_ >= 0 && pattern_loop_row_ < num_rows);
+                        row_ = pattern_loop_row_ -1;
+                        --pattern_loop_counter_;
+                        wprintf(L"Looping back to %d (counter %d)\n", pattern_loop_row_, pattern_loop_counter_);
+                    } else if (pattern_loop_counter_ == 0) {
+                        wprintf(L"Looping done\n");
+                        pattern_loop_counter_ = -1;
+                        pattern_loop_row_     = -1;
+                    }
+                }
+
                 if (++row_ >= num_rows) {
                     row_ = 0;
                     next_order();
@@ -608,6 +628,15 @@ private:
     void pattern_delay(int delay_notes) {
         if (pattern_delay_ == -1) {
             pattern_delay_ = delay_notes;
+        }
+    }
+
+    void pattern_loop(int x) {
+        wprintf(L"Pattern loop row = %d, x = %d\n", row_, x);
+        if (x == 0) {
+            pattern_loop_row_ = row_;
+        } else if (pattern_loop_counter_ == -1 && pattern_loop_row_ != -1) {
+            pattern_loop_counter_ = x;
         }
     }
 };
