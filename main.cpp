@@ -596,16 +596,12 @@ private:
         return 64;
     }
     virtual std::vector<int> do_column_widths() const override {
-        return { 3, 9, 9, 9, 9 };
+        return { 9, 9, 9, 9 };
     }
     virtual std::string do_cell_value(int row, int column) const override {
         std::ostringstream ss;
         ss << std::hex << std::setfill('0');
-        if (column == 0) {
-            ss << std::setw(2) << row;
-        } else {
-            ss << std::setw(2) << column;
-        }
+        ss << '(' << std::setw(2) << column << ", " << std::setw(2) << row << ')';
         return ss.str();
     }
 };
@@ -630,41 +626,36 @@ private:
         return 64;
     }
 
+    static constexpr int column_width = 10;
+
     virtual std::vector<int> do_column_widths() const override {
-        constexpr int w = 10;
-        std::vector<int> ws(mod_.num_channels + 1, w);
-        ws[0] = 2; // row
-        return ws;
+        return std::vector<int>(mod_.num_channels, column_width);
     }
 
     virtual std::string do_cell_value(int row, int column) const override {
         assert(row >= 0 && row < mod_player::num_rows);
-        assert(column >= 0 && column < mod_.num_channels+1);
+        assert(column >= 0 && column < mod_.num_channels);
         std::ostringstream ss;
-        ss << std::setfill('0') << std::uppercase;
-        if (column == 0) {
-            ss << std::setw(2) << row;
+        ss << std::hex << std::setfill('0') << std::uppercase;
+        const auto& note = mod_.at(order_, row)[column-1];
+        if (note.period) {
+            ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
         } else {
-            ss << std::hex;
-            const auto& note = mod_.at(order_, row)[column-1];
-            if (note.period) {
-                ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
-            } else {
-                ss << "...";
-            }
-            ss << " ";
-            if (note.sample) {
-                ss << std::setw(2) << (int)note.sample;
-            } else {
-                ss << "..";
-            }
-            ss << " ";
-            if (note.effect) {
-                ss << std::setw(3) << (int)note.effect;
-            } else {
-                ss << "...";
-            }
+            ss << "...";
         }
+        ss << " ";
+        if (note.sample) {
+            ss << std::setw(2) << (int)note.sample;
+        } else {
+            ss << "..";
+        }
+        ss << " ";
+        if (note.effect) {
+            ss << std::setw(3) << (int)note.effect;
+        } else {
+            ss << "...";
+        }
+        assert(ss.str().length() == column_width);
         return ss.str();
     }
 };

@@ -81,38 +81,57 @@ private:
         }
 
         //
-        // Offset and draw grid
+        // Draw column headers and calculate colx[]
         //
-        const int y_offset = -mid_y + line_height * centered_row_;
-
-        POINT prev_org;
-        RECT paint_rect = paint_rect_;
-        OffsetRect(&paint_rect, 0, y_offset);
-        GetWindowOrgEx(hdc, &prev_org);
-        SetWindowOrgEx(hdc, prev_org.x, prev_org.y + y_offset, nullptr);
-
-        const int rows = grid_.rows();
         const auto colw = grid_.column_widths();
-        
-        const int row_min = std::max<int>(paint_rect.top / line_height, 0);
-        const int row_max = std::min<int>((paint_rect.bottom + line_height - 1) / line_height, rows);
+        const int row_label_width = 2*font_size.cx + x_spacing;
+        std::vector<int> colx(colw.size());
+        int col_min = -1, col_max = static_cast<int>(colw.size());
+        for (int c = 0, x = row_label_width; c < static_cast<int>(colw.size()); ++c) {
+            const bool visible = x >= paint_rect_.left;
+            if (col_min == -1 && visible) {
+                col_min = c;
+            }
+            if (x >= paint_rect_.right) {
+                col_max = c;
+                break;
+            }
+            if (visible) {
+                const char column_header[2] = { static_cast<char>(((c+1)/10)+'0'), static_cast<char>(((c+1)%10)+'0') };
+                TextOutA(hdc, x + font_size.cx * (colw[c] - sizeof(column_header))/2, 0, column_header, sizeof(column_header));
+            }
+            colx[c] = x;
+            x += colw[c] * font_size.cx + x_spacing;
+        }
+        //wprintf(L"col_min = %2d, col_max = %2d\n", col_min, col_max);
+        assert(col_min >= 0 && col_min < col_max && col_max <= colw.size());
 
+        //
+        // Draw grid
+        //
+        RECT paint_rect = paint_rect_;
+        paint_rect.top += line_height; // offset paint rectangle to avoid painting over the column headers
+        paint_rect.bottom = std::max(paint_rect.bottom, paint_rect.top);
         SetTextAlign(hdc, TA_LEFT|TA_TOP);
-
+        const int rows  = grid_.rows();
+        const int row_offset = centered_row_ - mid_y / line_height;
+        const int row_min = std::max<int>(paint_rect.top / line_height + row_offset, 0);
+        const int row_max = std::min<int>((paint_rect.bottom + line_height - 1) / line_height + row_offset, rows);
+        const bool row_label_visible = true; // TODO: only draw if needed
+        //wprintf(L"row_offset = %+2d, row_min = %2d, row_max = %2d\n", row_offset, row_min, row_max);
         for (int r = row_min; r < row_max; ++r) {
-            int x = /*x_spacing*/0;
-            for (int c = 0; c < static_cast<int>(colw.size()); ++c) {
+            const int y = y_spacing + (r - row_offset) * line_height;
+            if (row_label_visible) {
+                const char row_label[2] = { static_cast<char>((r/10)+'0'), static_cast<char>((r%10)+'0') };
+                TextOutA(hdc, 0, y, row_label, sizeof(row_label));
+            }
+            for (int c = col_min; c < col_max; ++c) {
+                const int x = colx[c];
+                assert(x >= paint_rect.left && x < paint_rect.right);
                 const auto s = grid_.cell_value(r, c);
-                TextOutA(hdc, x, y_spacing + r * line_height - line_height/2, s.c_str(), static_cast<int>(s.length()));
-                x += colw[c] * font_size.cx + x_spacing;
+                TextOutA(hdc, x, y, s.c_str(), static_cast<int>(s.length()));
             }
         }
-
-        //
-        // Restore origin
-        //
-
-        SetWindowOrgEx(hdc, prev_org.x, prev_org.y, nullptr);
     }
 };
 
