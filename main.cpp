@@ -445,6 +445,16 @@ private:
         }
     }
 
+    void process_effects() {
+        for (int ch = 0; ch < mod_.num_channels; ++ch) {
+            auto& channel = channels_[ch];
+            const auto& note = mod_.at(order_, row_)[ch];
+            if (note.effect) {
+                channel.process_effect(tick_, note.effect);
+            }
+        }
+    }
+
     void tick() {
         if (!playing_) {
             return;
@@ -485,16 +495,11 @@ private:
                 }
                 process_row();
                 on_position_changed_(position{order_, mod_.order[order_], row_});
+                process_effects();
             }
         } else {
             // Intra-row tick
-        }
-        for (int ch = 0; ch < mod_.num_channels; ++ch) {
-            auto& channel = channels_[ch];
-            const auto& note = mod_.at(order_, row_)[ch];
-            if (note.effect) {
-                channel.process_effect(tick_, note.effect);
-            }
+            process_effects();
         }
         schedule();
     }
