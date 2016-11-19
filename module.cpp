@@ -18,7 +18,7 @@ const module_note* module::at(int ord, int row) const
 
 int module::note_to_period(piano_key note) const
 {
-    assert(type == module_type::mod);
+    assert(type == module_type::mod || type == module_type::s3m);
     return freq_to_amiga_period(piano_key_to_freq(note, piano_key::C_5, 8363));
 }
 

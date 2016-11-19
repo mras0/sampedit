@@ -163,20 +163,138 @@ private:
             }
             if (note.note != piano_key::NONE) {
                 assert(note.note != piano_key::OFF);
-                const int period = player_.mod_.note_to_period(note.note);
-                const auto effect = note.effect>>8;
-                if (effect == 3 || effect == 5) {
-                    porta_target_period_ = period;
+                if (player_.mod_.type == module_type::mod) {
+                    process_mod_note(note);
                 } else {
-                    set_period(period);
-                    if (effect != 9 && note.effect>>4 != 0xED) {
-                        trig(0);
-                    }
+                    assert(player_.mod_.type == module_type::s3m);
+                    process_s3m_note(note);
                 }
             }
         }
 
         void process_effect(int tick, int effect) {
+            if (player_.mod_.type == module_type::mod) {
+                process_mod_effect(tick, effect);
+            } else {
+                process_s3m_effect(tick, effect);
+            }
+        }
+
+
+    private:
+        mod_player&     player_;
+        sample_voice    mix_chan_;
+        int             sample_ = 0;
+        int             volume_ = 0;
+        int             period_ = 0;
+        int             porta_target_period_ = 0;
+        int             porta_speed_ = 0;
+        int             vib_depth_ = 0;
+        int             vib_speed_ = 0;
+        int             vib_pos_   = 0;
+        int             sample_offset_ = 0;
+
+        int volume() const { return volume_; }
+
+        void volume(int vol) {
+            assert(vol >= 0 && vol <= max_volume);
+            volume_ = vol;
+            mix_chan_.volume(static_cast<float>(vol) / max_volume);
+        }
+
+        void set_voice_period(int period) {
+            mix_chan_.freq(amiga_period_to_freq(period));
+        }
+
+        void set_period(int period) {
+            period_ = period;
+            set_voice_period(period_);
+        }
+
+        void do_arpeggio(int amount) {
+            const int res_per = freq_to_amiga_period(amiga_period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
+            //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
+            set_voice_period(res_per);
+        }
+
+        void do_volume_slide(int amount) {
+            volume(std::max(0, std::min(max_volume, volume() + amount)));
+        }
+
+        void do_volume_slide_xy(int x, int y) {
+            if (x && y) {
+            } else if (x > 0) {
+                do_volume_slide(+x);
+            } else if (y > 0) {
+                do_volume_slide(-y);
+            }
+        }
+
+        void do_porta_to_note() {
+            if (period_ < porta_target_period_) {
+                set_period(std::min(porta_target_period_, period_ + porta_speed_));
+            } else {
+                set_period(std::max(porta_target_period_, period_ - porta_speed_));
+            }
+        }
+
+        void do_vibrato() {
+            static const uint8_t sinetable[32] ={
+                0, 24, 49, 74, 97,120,141,161,
+                180,197,212,224,235,244,250,253,
+                255,253,250,244,235,224,212,197,
+                180,161,141,120, 97, 74, 49, 24
+            };
+
+            assert(vib_pos_ >= -32 && vib_pos_ <= 31);
+
+            const int delta = sinetable[vib_pos_ & 31];
+
+            set_voice_period(period_ + (((vib_pos_ < 0 ? -delta : delta) * vib_depth_) / 128));
+
+            vib_pos_ += vib_speed_;
+            if (vib_pos_ > 31) vib_pos_ -= 64;
+        }
+
+
+        const module_instrument& instrument() const {
+            assert(sample_ >= 1 && sample_ <= 32);
+            return player_.mod_.instruments[sample_ - 1];
+        }
+
+        void trig(int offset) {
+            vib_pos_ = 0;
+            assert(sample_);
+            auto& s = player_.mod_.samples[sample_-1];
+            if (s.length()) {
+                mix_chan_.play(s, std::min(s.length(), offset));
+            }
+        }
+        
+        void process_s3m_note(const module_note& note) {
+            const int period = player_.mod_.note_to_period(note.note);
+            set_period(period);
+            trig(0);
+        }
+
+        void process_s3m_effect(int tick, int effect) {
+            wprintf(L"%d: Ignoring effect %c%02X\n", tick, (effect>>8)-1+'A', effect&0xff);
+        }
+
+        void process_mod_note(const module_note& note) {
+            const int period = player_.mod_.note_to_period(note.note);
+            const auto effect = note.effect>>8;
+            if (effect == 3 || effect == 5) {
+                porta_target_period_ = period;
+            } else {
+                set_period(period);
+                if (effect != 9 && note.effect>>4 != 0xED) {
+                    trig(0);
+                }
+            }
+        }
+
+        void process_mod_effect(int tick, int effect) {
             assert(effect);
             const int xy = effect&0xff;
             const int x  = xy>>4;
@@ -310,105 +428,15 @@ private:
             case 0xF: // Fxy Set speed
                 if (tick) return;
                 if (xy < 0x20) {
-                    player_.speed_ = xy;
+                    player_.set_speed(xy);
                 } else {
-                    // BPM, 2*bpm/5 ticks per second
-                    player_.mixer_.ticks_per_second(xy*2/5);
+                    player_.set_tempo(xy);
                 }
                 return;
             }
             if (!tick) wprintf(L"Unhandled effect %03X\n", effect);
         }
 
-    private:
-        mod_player&     player_;
-        sample_voice    mix_chan_;
-        int             sample_ = 0;
-        int             volume_ = 0;
-        int             period_ = 0;
-        int             porta_target_period_ = 0;
-        int             porta_speed_ = 0;
-        int             vib_depth_ = 0;
-        int             vib_speed_ = 0;
-        int             vib_pos_   = 0;
-        int             sample_offset_ = 0;
-
-        int volume() const { return volume_; }
-
-        void volume(int vol) {
-            assert(vol >= 0 && vol <= max_volume);
-            volume_ = vol;
-            mix_chan_.volume(static_cast<float>(vol) / max_volume);
-        }
-
-        void set_voice_period(int period) {
-            mix_chan_.freq(amiga_period_to_freq(period));
-        }
-
-        void set_period(int period) {
-            period_ = period;
-            set_voice_period(period_);
-        }
-
-        void do_arpeggio(int amount) {
-            const int res_per = freq_to_amiga_period(amiga_period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
-            //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
-            set_voice_period(res_per);
-        }
-
-        void do_volume_slide(int amount) {
-            volume(std::max(0, std::min(max_volume, volume() + amount)));
-        }
-
-        void do_volume_slide_xy(int x, int y) {
-            if (x && y) {
-            } else if (x > 0) {
-                do_volume_slide(+x);
-            } else if (y > 0) {
-                do_volume_slide(-y);
-            }
-        }
-
-        void do_porta_to_note() {
-            if (period_ < porta_target_period_) {
-                set_period(std::min(porta_target_period_, period_ + porta_speed_));
-            } else {
-                set_period(std::max(porta_target_period_, period_ - porta_speed_));
-            }
-        }
-
-        void do_vibrato() {
-            static const uint8_t sinetable[32] ={
-                0, 24, 49, 74, 97,120,141,161,
-                180,197,212,224,235,244,250,253,
-                255,253,250,244,235,224,212,197,
-                180,161,141,120, 97, 74, 49, 24
-            };
-
-            assert(vib_pos_ >= -32 && vib_pos_ <= 31);
-
-            const int delta = sinetable[vib_pos_ & 31];
-
-            set_voice_period(period_ + (((vib_pos_ < 0 ? -delta : delta) * vib_depth_) / 128));
-
-            vib_pos_ += vib_speed_;
-            if (vib_pos_ > 31) vib_pos_ -= 64;
-        }
-
-
-        const module_instrument& instrument() const {
-            assert(sample_ >= 1 && sample_ <= 32);
-            return player_.mod_.instruments[sample_ - 1];
-        }
-
-        void trig(int offset) {
-            vib_pos_ = 0;
-            assert(sample_);
-            auto& s = player_.mod_.samples[sample_-1];
-            if (s.length()) {
-                mix_chan_.play(s, std::min(s.length(), offset));
-            }
-        }
     };
 
     module               mod_;
@@ -463,8 +491,6 @@ private:
             return;
         }
 
-        assert(mod_.type == module_type::mod);
-
         if (++tick_ >= speed_) {
             tick_ = 0;
             if (pattern_delay_ > 0) {
@@ -507,6 +533,15 @@ private:
             process_effects();
         }
         schedule();
+    }
+
+    void set_speed(int speed) {
+        speed_ = speed;
+    }
+
+    void set_tempo(int bpm) {
+        // BPM, 2*bpm/5 ticks per second
+        mixer_.ticks_per_second(bpm*2/5);
     }
 
     void pattern_break(int row) {
@@ -705,11 +740,7 @@ int main(int argc, char* argv[])
             if (skip_to > 0) {
                 mod_player_->skip_to_order(skip_to);
             }
-            if (mod_player_->mod().type == module_type::mod) {
-                mod_player_->toggle_playing();
-            } else {
-                wprintf(L"Not playing S3M\n");
-            }
+            mod_player_->toggle_playing();
         }
 
         MSG msg;
