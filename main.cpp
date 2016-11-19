@@ -162,13 +162,17 @@ private:
                 volume(instrument().volume);
             }
             if (note.note != piano_key::NONE) {
-                assert(note.note != piano_key::OFF);
                 if (player_.mod_.type == module_type::mod) {
+                    assert(note.note != piano_key::OFF);
                     process_mod_note(note);
                 } else {
                     assert(player_.mod_.type == module_type::s3m);
                     process_s3m_note(note);
                 }
+            }
+            if (note.volume) {
+                assert(player_.mod_.type == module_type::s3m);
+                process_s3m_volume(note.volume);
             }
         }
 
@@ -272,13 +276,62 @@ private:
         }
         
         void process_s3m_note(const module_note& note) {
+            if (note.note == piano_key::OFF) {
+                wprintf(L"Ignoring key off\n");
+                return;
+            }
+
             const int period = player_.mod_.note_to_period(note.note);
-            set_period(period);
-            trig(0);
+            const char effchar = static_cast<char>((note.effect>>8)-1+'A');
+            if (effchar == 'G') {
+                porta_target_period_ = period_;
+            } else {
+                set_period(period);
+                trig(0);
+            }
+        }
+
+        void process_s3m_volume(int vol) {
+            assert(vol > 0 && vol <= 64);
+            volume(vol);
         }
 
         void process_s3m_effect(int tick, int effect) {
-            wprintf(L"%d: Ignoring effect %c%02X\n", tick, (effect>>8)-1+'A', effect&0xff);
+            const char effchar = static_cast<char>((effect>>8)-1+'A');
+            const int xy = effect&0xff;
+            const int x = xy >> 4;
+            const int y = xy & 0xf;
+            switch (effchar) {
+            case 'A': // Set speed
+                player_.set_speed(xy);
+                break;
+            case 'C': // Pattern break
+                process_mod_effect(tick, 0xD00 | xy);
+                break;
+            case 'H': // Vibrato
+                process_mod_effect(tick, 0x400 | xy);
+                break;
+            case 'J': // Arpeggio
+                process_mod_effect(tick, 0x000 | xy);
+                break;
+            case 'G': // Gxy Porta to note
+                if (xy) porta_speed_ = xy;
+                if (tick) {
+                    do_porta_to_note();
+                }
+                break;
+            case 'S':
+                switch(x) {
+                case 0xB: // Pattern Loop
+                    process_mod_effect(tick, 0xE60 | y);
+                    break;
+                default:
+                    if (!tick) wprintf(L"Ignoring effect %c%02X\n", effchar, xy);
+                }
+                break;
+            default:
+                if (!tick) wprintf(L"Ignoring effect %c%02X\n", effchar, xy);
+            }
         }
 
         void process_mod_note(const module_note& note) {
