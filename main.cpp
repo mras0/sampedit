@@ -267,6 +267,16 @@ private:
                 switch (x) {
                 case 0x0: // E0y Set fiter
                     return;
+                case 0x1: // E1y Fine porta down
+                    if (!tick) {
+                        set_period(period_ - y);
+                    }
+                    return;
+                case 0x2: // E2y Fine porta down
+                    if (!tick) {
+                        set_period(period_ + y);
+                    }
+                    return;
                 case 0x6: // E6y Pattern loop
                     if (!tick) {
                         player_.pattern_loop(y);
@@ -421,6 +431,7 @@ private:
     int                  pattern_delay_ = -1;
     int                  pattern_loop_row_ = -1;
     int                  pattern_loop_counter_ = -1;
+    bool                 pattern_loop_ = false;
     event<position>      on_position_changed_;
     std::vector<channel> channels_;
 
@@ -476,14 +487,16 @@ private:
                     row_   = pattern_break_row_ - 1;
                 }
 
-                if (pattern_loop_row_ != -1) {
+                if (pattern_loop_) {
+                    pattern_loop_ = false;
                     if (pattern_loop_counter_ > 0) {
                         assert(pattern_loop_row_ >= 0 && pattern_loop_row_ < num_rows);
+                        //wprintf(L"%2.2d: Looping back to %d (counter %d)\n", row_, pattern_loop_row_, pattern_loop_counter_);
                         row_ = pattern_loop_row_ -1;
+                        pattern_loop_row_ = -1;
                         --pattern_loop_counter_;
-                        wprintf(L"Looping back to %d (counter %d)\n", pattern_loop_row_, pattern_loop_counter_);
                     } else if (pattern_loop_counter_ == 0) {
-                        wprintf(L"Looping done\n");
+                        //wprintf(L"%2.2d: Looping done\n", row_);
                         pattern_loop_counter_ = -1;
                         pattern_loop_row_     = -1;
                     }
@@ -524,12 +537,15 @@ private:
     }
 
     void pattern_loop(int x) {
-        wprintf(L"Pattern loop row = %d, x = %d\n", row_, x);
         if (x == 0) {
             pattern_loop_row_ = row_;
-        } else if (pattern_loop_counter_ == -1 && pattern_loop_row_ != -1) {
-            pattern_loop_counter_ = x;
+        } else {
+            if (pattern_loop_counter_ == -1 && pattern_loop_row_ != -1) {
+                pattern_loop_counter_ = x;
+            }
+            pattern_loop_ = true;
         }
+        //wprintf(L"%2.2d: Pattern loop x = %d (row =%d, counter = %d)\n", row_, x, pattern_loop_row_, pattern_loop_counter_);
     }
 };
 
@@ -693,7 +709,10 @@ int main(int argc, char* argv[])
                     main_wnd.update_grid(pos.row);
                 });
             });
-            //mod_player_->skip_to_order(20);
+            const int skip_to = argc > 2 ? std::stoi(argv[2]) : 0;
+            if (skip_to > 0) {
+                mod_player_->skip_to_order(skip_to);
+            }
             if (mod_player_->mod().type == module_type::mod) {
                 mod_player_->toggle_playing();
             } else {
