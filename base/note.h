@@ -12,7 +12,8 @@ enum class piano_key : unsigned char {
     A_4 = 69,
     C_5 = 60,
     C_9 = 108,
-    OFF = 255,
+    OFF = 254,
+    NONE = 255,
 };
 
 constexpr piano_key operator+(piano_key lhs, int rhs) {

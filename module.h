@@ -5,18 +5,24 @@
 #include <vector>
 #include <string>
 #include <base/sample.h>
+#include <base/note.h>
 
 struct module_instrument {
     int volume;
 };
 
 struct module_note {
-    uint8_t  sample;
-    uint16_t period;
-    uint16_t effect;
+    piano_key  note        = piano_key::NONE;
+    uint16_t   period      = 0;
+    uint8_t    instrument  = 0;
+    uint8_t    volume      = 0;
+    uint16_t   effect      = 0;
 };
 
+enum class module_type { mod, s3m };
+
 struct module {
+    module_type                            type;
     std::string                            name;
     std::vector<module_instrument>         instruments;
     std::vector<uint8_t>                   order;

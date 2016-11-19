@@ -43,7 +43,7 @@ public:
                     state_ = state::looping;
                     continue;
                 } else {
-                    //wprintf(L"End of sample at %f\n", pos_);
+                    //wprintf(L"End of instrument at %f\n", pos_);
                     state_ = state::not_playing;
                     break;
                 }

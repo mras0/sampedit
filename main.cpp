@@ -155,47 +155,6 @@ public:
         return static_cast<int>(clock_rate / (2 * freq));
     }
 
-    static piano_key period_to_piano_key(int period) {
-        /*
-        Finetune 0
-                   C    C#   D    D#   E    F    F#   G    G#   A    A#   B
-        Octave 0:1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907
-        Octave 1: 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453
-        Octave 2: 428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226
-        Octave 3: 214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113
-        Octave 4: 107, 101,  95,  90,  85,  80,  76,  71,  67,  64,  60,  57
-        */
-
-        constexpr int note_periods[12 * 5 + 1] = {
-            1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907,
-            856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453,
-            428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226,
-            214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113,
-            107, 101,  95,  90,  85,  80,  76,  71,  67,  64,  60,  57,
-
-            // DOPE.MOD has a note played at period 56
-            -1
-        };
-        const int count = sizeof(note_periods) / sizeof(*note_periods);
-
-        for (int i = 0; i < count - 1; ++i) {
-            if (period == note_periods[i] || (i+1 < count && period > note_periods[i+1])) {
-                if (period != note_periods[i]) {
-                    // DOPE.MOD uses non-protracker periods..
-                    //wprintf(L"Period %d isn't exact! Using %d\n", period, note_periods[i]);
-                }
-
-                //const auto k = piano_key::C_0 + i + 3*12;
-                //const float freq = piano_key_to_freq(k, piano_key::C_5, 8363);
-                //wprintf(L"period = %d, freq = %f, key = %S (%f)\n", period, period_to_freq(period), piano_key_to_string(k).c_str(), freq);
-
-                return piano_key::C_0 + i + 3*12; // Octave offset: PT=0, FT2=2, MPT=3 (3 also matches a C5 speed of 8363 (period 428)
-            }
-        }
-        assert(false);
-        return piano_key::OFF;
-    }
-
 private:
     class channel {
     public:
@@ -207,9 +166,9 @@ private:
         }
 
         void process_note(const module_note& note) {
-            if (note.sample) { 
-                assert(note.sample >= 1 && note.sample <= 32);
-                sample_ = note.sample;
+            if (note.instrument) { 
+                assert(note.instrument >= 1 && note.instrument <= 32);
+                sample_ = note.instrument;
                 volume(instrument().volume);
             }
             if (note.period) {
@@ -491,6 +450,8 @@ private:
             return;
         }
 
+        assert(mod_.type == module_type::mod);
+
         if (++tick_ >= speed_) {
             tick_ = 0;
             if (pattern_delay_ > 0) {
@@ -615,10 +576,8 @@ private:
         return 64;
     }
 
-    static constexpr int column_width = 10;
-
     virtual std::vector<int> do_column_widths() const override {
-        return std::vector<int>(mod_.num_channels, column_width);
+        return std::vector<int>(mod_.num_channels, mod_.type == module_type::mod ? 10 : 14);
     }
 
     virtual std::string do_cell_value(int row, int column) const override {
@@ -627,24 +586,37 @@ private:
         std::ostringstream ss;
         ss << std::hex << std::setfill('0') << std::uppercase;
         const auto& note = mod_.at(order_, row)[column];
-        if (note.period) {
-            ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
+        if (note.note != piano_key::NONE) {
+            ss << piano_key_to_string(note.note) << ' ';
         } else {
-            ss << "...";
+            ss << "... ";
         }
-        ss << " ";
-        if (note.sample) {
-            ss << std::setw(2) << (int)note.sample;
+        if (note.instrument) {
+            ss << std::setw(2) << (int)note.instrument << ' ';
         } else {
-            ss << "..";
+            ss << ".. ";
         }
-        ss << " ";
+        if (mod_.type != module_type::mod) {
+            assert(mod_.type == module_type::s3m);
+            if (note.volume) {
+                assert(note.volume < 100);
+                ss << 'v' << std::setw(2) << std::dec << (int)note.volume << std::hex << ' ';
+            } else {
+                ss << "... ";
+            }
+        }
         if (note.effect) {
-            ss << std::setw(3) << (int)note.effect;
+            if (mod_.type == module_type::mod) {
+                ss << std::setw(3) << (int)note.effect;
+            } else {
+                assert(mod_.type == module_type::s3m);
+                ss << (char)((note.effect >> 8) + 'A' - 1);
+                ss << std::setw(2) << (int)(note.effect & 0xff);
+            }
         } else {
             ss << "...";
         }
-        assert(ss.str().length() == column_width);
+        assert(ss.str().length() == column_widths()[column]);
         return ss.str();
     }
 };
@@ -679,6 +651,7 @@ int main(int argc, char* argv[])
         keyboard_voice.volume(0.5f);
         m.at_next_tick([&] { m.add_voice(keyboard_voice); });
         main_wnd.on_piano_key_pressed([&](piano_key key) {
+            assert(key != piano_key::NONE);
             if (key == piano_key::OFF) {
                 m.at_next_tick([&] { keyboard_voice.key_off(); } );
                 return;
@@ -716,7 +689,11 @@ int main(int argc, char* argv[])
                 });
             });
             //mod_player_->skip_to_order(20);
-            mod_player_->toggle_playing();
+            if (mod_player_->mod().type == module_type::mod) {
+                mod_player_->toggle_playing();
+            } else {
+                wprintf(L"Not playing S3M\n");
+            }
         }
 
         MSG msg;

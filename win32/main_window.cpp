@@ -129,7 +129,7 @@ private:
             }
         } else {
             piano_key key = key_to_note(vk);
-            if (key != piano_key::OFF) {
+            if (key != piano_key::NONE) {
                 on_piano_key_pressed_(key);
             }
         }

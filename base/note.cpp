@@ -10,16 +10,18 @@ float note_difference_to_scale(float note_diff)
 
 float piano_key_to_freq(piano_key n, piano_key base_key /*= piano_key::A_4*/, float base_freq/* = 440.0f*/)
 {
-    assert(n != piano_key::OFF);
+    assert(n != piano_key::OFF && n != piano_key::NONE);
     return base_freq * note_difference_to_scale(static_cast<float>(static_cast<int>(n) - static_cast<int>(base_key)));
 }
 
 std::string piano_key_to_string(piano_key n)
 {
-    assert(n != piano_key::OFF);
+    assert(n != piano_key::NONE);
+    if (n == piano_key::OFF) return "^^^";
     const int val    = static_cast<int>(n);
     const int octave = val/12;
     const int note   = val%12;
+    assert(octave >= 0 && octave < 9);
     static const char* const note_names[12] ={"C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"};
     return note_names[note] + std::to_string(octave);
 }
@@ -53,5 +55,5 @@ piano_key key_to_note(int vk) {
     case 'J': return offset + 10; // A#
     case 'M': return offset + 11; // B
     }
-    return piano_key::OFF;
+    return piano_key::NONE;
 }
