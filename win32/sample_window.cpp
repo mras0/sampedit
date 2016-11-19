@@ -94,7 +94,7 @@ private:
     }
 
     int sample_val_to_y(float val) const {
-        return (size_.y / 2) + static_cast<int>(0.5 + val * (size_.y / 2 - y_border));
+        return (size_.y / 2) + static_cast<int>(0.5 + -val * (size_.y / 2 - y_border));
     }
 
     bool on_erase_background(HDC) {
