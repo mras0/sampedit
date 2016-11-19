@@ -119,18 +119,22 @@ private:
             colx[c] = x;
             x += colw[c] * font_size.cx + x_spacing;
         }
-        //wprintf(L"col_min = %2d, col_max = %2d\n", col_min, col_max);
+
+        if (col_min < 0 || col_min == col_max) {
+            return;
+        }
+
         assert(col_min >= 0 && col_min < col_max && col_max <= colw.size());
 
         //
         // Draw grid
         //
         RECT paint_rect = paint_rect_;
-        paint_rect.top += line_height; // offset paint rectangle to avoid painting over the column headers
+        //paint_rect.top += line_height; // offset paint rectangle to avoid painting over the column headers
         paint_rect.bottom = std::max(paint_rect.bottom, paint_rect.top);
         SetTextAlign(hdc, TA_LEFT|TA_TOP);
         const int rows  = grid_.rows();
-        const int row_offset = centered_row_ - mid_y / line_height;
+        const int row_offset = centered_row_ - mid_y / line_height + 1;
         const int row_min = std::max<int>(paint_rect.top / line_height + row_offset, 0);
         const int row_max = std::min<int>((paint_rect.bottom + line_height - 1) / line_height + row_offset, rows);
         const bool row_label_visible = true; // TODO: only draw if needed

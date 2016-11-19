@@ -25,14 +25,6 @@ std::vector<float> create_sample(int len, float freq, int rate=44100)
     return data;
 }
 
-std::vector<float> convert_sample_data(const std::vector<signed char>& d) {
-    std::vector<float> data(d.size());
-    for (size_t i = 0, len = d.size(); i < len; ++i) {
-        data[i] = d[i]/128.0f;
-    }
-    return data;
-}
-
 class mixer {
 public:
     explicit mixer()
@@ -119,10 +111,6 @@ public:
         });
     }
 
-    void set_samples(std::vector<sample>* samples) {
-        samples_ = samples;
-    }
-
     const module& mod() const { return mod_; }
 
     struct position {
@@ -130,7 +118,7 @@ public:
     };
 
     void skip_to_order(int order) {
-        assert(order >= 0 && order < mod_.num_order);
+        assert(order >= 0 && order < mod_.order.size());
         mixer_.at_next_tick([order, this] {
             // TODO: Process (some) effects...
             wprintf(L"Skipping to order %d, cur = %d\n", order, order_);
@@ -159,9 +147,8 @@ public:
 
     static constexpr float clock_rate = 7159090.5f;
 
-    static float period_to_freq(int period, int finetune) {
-        assert(finetune >= -8 && finetune < 7);
-        return note_difference_to_scale(finetune / 8.0f) * clock_rate / (period * 2);
+    static float period_to_freq(int period) {
+        return clock_rate / (period * 2);
     }
 
     static int freq_to_period(float freq) {
@@ -197,7 +184,12 @@ public:
                     // DOPE.MOD uses non-protracker periods..
                     //wprintf(L"Period %d isn't exact! Using %d\n", period, note_periods[i]);
                 }
-                return piano_key::C_0 + i + 2*12; // Octave offset: PT=0, FT2=2, MPT=3
+
+                //const auto k = piano_key::C_0 + i + 3*12;
+                //const float freq = piano_key_to_freq(k, piano_key::C_5, 8363);
+                //wprintf(L"period = %d, freq = %f, key = %S (%f)\n", period, period_to_freq(period), piano_key_to_string(k).c_str(), freq);
+
+                return piano_key::C_0 + i + 3*12; // Octave offset: PT=0, FT2=2, MPT=3 (3 also matches a C5 speed of 8363 (period 428)
             }
         }
         assert(false);
@@ -218,7 +210,7 @@ private:
             if (note.sample) { 
                 assert(note.sample >= 1 && note.sample <= 32);
                 sample_ = note.sample;
-                volume(mod_sample().volume);
+                volume(instrument().volume);
             }
             if (note.period) {
                 const auto effect = note.effect>>8;
@@ -389,7 +381,7 @@ private:
         }
 
         void set_voice_period(int period) {
-            mix_chan_.freq(period_to_freq(period, mod_sample().finetune));
+            mix_chan_.freq(period_to_freq(period));
         }
 
         void set_period(int period) {
@@ -398,7 +390,7 @@ private:
         }
 
         void do_arpeggio(int amount) {
-            const int res_per = freq_to_period(period_to_freq(period_, 0) * note_difference_to_scale(static_cast<float>(amount)));
+            const int res_per = freq_to_period(period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
             //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
             set_voice_period(res_per);
         }
@@ -443,19 +435,17 @@ private:
         }
 
 
-        const module_sample& mod_sample() const {
+        const module_instrument& instrument() const {
             assert(sample_ >= 1 && sample_ <= 32);
-            return player_.mod_.samples[sample_ - 1];
+            return player_.mod_.instruments[sample_ - 1];
         }
 
         void trig(int offset) {
             vib_pos_ = 0;
-            if (player_.samples_) {
-                assert(sample_);
-                auto& s = (*player_.samples_)[sample_-1];
-                if (s.length()) {
-                    mix_chan_.play(s, std::min(s.length(), offset));
-                }
+            assert(sample_);
+            auto& s = player_.mod_.samples[sample_-1];
+            if (s.length()) {
+                mix_chan_.play(s, std::min(s.length(), offset));
             }
         }
     };
@@ -472,7 +462,6 @@ private:
     int                  pattern_delay_ = -1;
     int                  pattern_loop_row_ = -1;
     int                  pattern_loop_counter_ = -1;
-    std::vector<sample>* samples_ = nullptr;
     event<position>      on_position_changed_;
     std::vector<channel> channels_;
 
@@ -491,7 +480,7 @@ private:
     }
 
     void next_order() {
-        if (++order_ >= mod_.num_order) {
+        if (++order_ >= mod_.order.size()) {
             order_ = 0; // TODO: Use restart pos
             assert(!"Song done!");
         }
@@ -556,7 +545,7 @@ private:
     }
 
     void pattern_jump(int order) {
-        assert(order_ >= 0 && order_ < mod_.num_order);
+        assert(order_ >= 0 && order_ < mod_.order.size());
         assert(pattern_jump_ == -1);
         pattern_jump_      = order;
         pattern_break_row_ = -1; // A pattern jump after a pattern break makes the break have no effect
@@ -637,7 +626,7 @@ private:
         assert(column >= 0 && column < mod_.num_channels);
         std::ostringstream ss;
         ss << std::hex << std::setfill('0') << std::uppercase;
-        const auto& note = mod_.at(order_, row)[column-1];
+        const auto& note = mod_.at(order_, row)[column];
         if (note.period) {
             ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
         } else {
@@ -665,30 +654,26 @@ int main(int argc, char* argv[])
     try {
         mixer m;
 
-        std::vector<sample> samples;
+        const std::vector<sample>* samples;
         std::unique_ptr<mod_player> mod_player_;
         std::unique_ptr<mod_like_grid> grid;
         if (argc > 1) {
             mod_player_.reset(new mod_player(load_module(argv[1]), m));
             auto& mod = mod_player_->mod();
-            wprintf(L"Loaded '%S' - '%-22.22S' %d channels\n", argv[1], mod.name, mod.num_channels);
-            for (int i = 0; i < 31; ++i) {
-                const auto& s = mod.samples[i];
-                wprintf(L"%-22.22S FineTune: %d\n", s.name, s.finetune);
-                samples.emplace_back(convert_sample_data(s.data), 8363.0f*note_difference_to_scale(s.finetune/8.0f), std::string(s.name, s.name+sizeof(s.name)));
-                if (s.loop_length > 2) {
-                    samples.back().loop_start(s.loop_start);
-                    samples.back().loop_length(s.loop_length);
-                }
+            wprintf(L"Loaded '%S' - '%-20.20S' %d channels\n", argv[1], mod.name.c_str(), mod.num_channels);
+            for (const auto& s : mod.samples) {
+                wprintf(L"%-22.22S c5 rate: %d\n", s.name().c_str(), (int)(s.c5_rate()+0.5f));
             }
-            mod_player_->set_samples(&samples);
+            samples = &mod.samples;
             grid.reset(new mod_grid{mod});
         } else {
-            samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
+            static std::vector<sample> generated_samples;
+            generated_samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
+            samples = &generated_samples;
             grid.reset(new test_grid{});
         }
         auto main_wnd = main_window::create(*grid);
-        main_wnd.set_samples(samples);
+        main_wnd.set_samples(*samples);
 
         sample_voice keyboard_voice(m.sample_rate());
         keyboard_voice.volume(0.5f);
@@ -699,12 +684,12 @@ int main(int argc, char* argv[])
                 return;
             }
             const int idx = main_wnd.current_sample_index();
-            if (idx < 0 || idx >= samples.size()) return;
-            const auto freq = piano_key_to_freq(key, piano_key::C_5, samples[idx].c5_rate());
+            if (idx < 0 || idx >= samples->size()) return;
+            const auto freq = piano_key_to_freq(key, piano_key::C_5, (*samples)[idx].c5_rate());
             wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
             m.at_next_tick([&, idx, freq] {
                 keyboard_voice.freq(freq);
-                keyboard_voice.play(samples[idx], 0); 
+                keyboard_voice.play((*samples)[idx], 0); 
             });
         });
         main_wnd.on_start_stop([&]() {

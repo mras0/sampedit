@@ -3,15 +3,11 @@
 
 #include <stdint.h>
 #include <vector>
+#include <string>
+#include <base/sample.h>
 
-struct module_sample {
-    char                     name[22];
-    int                      length;
-    int                      finetune;
-    int                      volume;
-    int                      loop_start;
-    int                      loop_length;
-    std::vector<signed char> data;
+struct module_instrument {
+    int volume;
 };
 
 struct module_note {
@@ -21,20 +17,15 @@ struct module_note {
 };
 
 struct module {
-    char                     name[20];
-    module_sample            samples[31];
-    int                      num_order;
-    int                      song_end;
-    uint8_t                  order[128];
-    char                     format[4];
-    int                      num_channels;
-    std::vector<module_note> pattern_data;
+    std::string                            name;
+    std::vector<module_instrument>         instruments;
+    std::vector<uint8_t>                   order;
+    int                                    num_channels;
+    std::vector<std::vector<module_note>>  patterns;
+    std::vector<sample>                    samples;
 
     static constexpr int rows_per_pattern = 64;
 
-    int num_patterns() const { 
-        return static_cast<int>(pattern_data.size() / (num_channels * rows_per_pattern));
-    }
     const module_note* at(int order, int row) const;
 };
 

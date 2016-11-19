@@ -22,10 +22,14 @@ public:
     int length() const { return static_cast<int>(data_.size()); }
 
     int loop_start() const { return loop_start_; }
-    void loop_start(int start) { loop_start_ = start; }
-
     int loop_length() const { return loop_length_; }
-    void loop_length(int length) { loop_length_ = length; }
+    
+    void loop(int start, int loop_length) {
+        assert(start >= 0 && start < length());
+        assert(loop_length > 0 && start+loop_length <= length());
+        loop_start_ = start;
+        loop_length_ = loop_length;
+    }
 
     float get(int pos) const {
         return data_[pos];
