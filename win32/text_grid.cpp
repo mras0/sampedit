@@ -4,6 +4,14 @@
 
 class text_grid_view_impl : public window_base<text_grid_view_impl>, public double_buffered_paint<text_grid_view_impl> {
 public:
+    void column_offset(int offset) {
+        if (offset != column_offset_) {
+            assert(offset >= 0 && offset < static_cast<int>(grid_.column_widths().size()));
+            column_offset_ = offset;
+            InvalidateRect(hwnd(), nullptr, TRUE);
+        }
+    }
+
     void centered_row(int row) {
         if (row != centered_row_) {
             centered_row_ = row;
@@ -14,6 +22,7 @@ public:
 private:
     virtual_grid&   grid_;
     font_ptr        font_;
+    int             column_offset_ = 0;
     int             centered_row_ = 0;
 
     friend window_base<text_grid_view_impl>;
@@ -39,6 +48,13 @@ private:
             centered_row(std::max(centered_row_ - rows_per_page, 0));
         } else if (vk == VK_NEXT) {
             centered_row(std::min(centered_row_ + rows_per_page, grid_.rows() - 1));
+        } else if (vk == VK_TAB) {
+            const int num_cols = static_cast<int>(grid_.column_widths().size());
+            if (GetKeyState(VK_SHIFT)) {
+                column_offset(column_offset_ ? column_offset_ - 1 : num_cols - 1);
+            } else {
+                column_offset((column_offset_ + 1) % num_cols);
+            }
         }
     }
 
@@ -87,7 +103,7 @@ private:
         const int row_label_width = 2*font_size.cx + x_spacing;
         std::vector<int> colx(colw.size());
         int col_min = -1, col_max = static_cast<int>(colw.size());
-        for (int c = 0, x = row_label_width; c < static_cast<int>(colw.size()); ++c) {
+        for (int c = column_offset_, x = row_label_width; c < static_cast<int>(colw.size()); ++c) {
             const bool visible = x >= paint_rect_.left;
             if (col_min == -1 && visible) {
                 col_min = c;
@@ -120,7 +136,7 @@ private:
         const bool row_label_visible = true; // TODO: only draw if needed
         //wprintf(L"row_offset = %+2d, row_min = %2d, row_max = %2d\n", row_offset, row_min, row_max);
         for (int r = row_min; r < row_max; ++r) {
-            const int y = y_spacing + (r - row_offset) * line_height;
+            const int y = y_spacing + (r - row_offset) * line_height + (mid_y + line_height/2) % line_height;
             if (row_label_visible) {
                 const char row_label[2] = { static_cast<char>((r/10)+'0'), static_cast<char>((r%10)+'0') };
                 TextOutA(hdc, 0, y, row_label, sizeof(row_label));
