@@ -14,11 +14,15 @@ public:
     void post(const job_type& job);
     void perform_all();
 
+#ifndef NDEBUG
+    void assert_in_queue_thread() const;
+#else
+    void assert_in_queue_thread() const {}
+#endif
+
 private:
     class impl;
     const std::unique_ptr<impl> impl_;
 };
-
-
 
 #endif

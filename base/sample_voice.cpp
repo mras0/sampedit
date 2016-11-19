@@ -24,8 +24,12 @@ public:
         volume_ = volume;
     }
 
+    void paused(bool pause) {
+        paused_ = pause;
+    }
+
     void mix(float* stero_buffer, int num_stereo_samples) {
-        if (state_ == state::not_playing) return;
+        if (paused_ || state_ == state::not_playing) return;
         assert(sample_);
 
         while (num_stereo_samples) {
@@ -60,6 +64,7 @@ private:
     float           pos_;
     float           incr_;
     float           volume_;
+    bool            paused_ = false;
     enum class state {
         not_playing,
         playing_first,
@@ -96,6 +101,9 @@ void sample_voice::freq(float f) {
 
 void sample_voice::volume(float volume) {
     impl_->volume(volume);
+}
+void sample_voice::paused(bool pause) {
+    impl_->paused(pause);
 }
 
 void sample_voice::do_mix(float* stero_buffer, int num_stereo_samples) {

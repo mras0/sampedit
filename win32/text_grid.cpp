@@ -55,7 +55,7 @@ private:
         GetTextMetrics(hdc, &tm);
         const SIZE font_size{tm.tmMaxCharWidth, tm.tmHeight};
 
-        const int x_spacing = font_size.cy*2;
+        const int x_spacing = font_size.cx*2;
         const int y_spacing = 1;
 
         const int line_height = font_size.cy + 2 * y_spacing;
@@ -96,6 +96,8 @@ private:
         
         const int row_min = std::max<int>(paint_rect.top / line_height, 0);
         const int row_max = std::min<int>((paint_rect.bottom + line_height - 1) / line_height, rows);
+
+        SetTextAlign(hdc, TA_LEFT|TA_TOP);
 
         for (int r = row_min; r < row_max; ++r) {
             int x = /*x_spacing*/0;

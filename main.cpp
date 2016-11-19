@@ -48,14 +48,17 @@ public:
     }
 
     void add_voice(voice& v) {
+        at_next_tick_.assert_in_queue_thread();
         voices_.push_back(&v);
     }
 
     void ticks_per_second(int tps) {
+        at_next_tick_.assert_in_queue_thread();
         ticks_per_second_ = tps;
     }
 
     void global_volume(float vol) {
+        at_next_tick_.assert_in_queue_thread();
         global_volume_ = vol;
     }
 
@@ -108,10 +111,12 @@ public:
         for (int i = 0; i < num_channels; ++i) {
             channels_.emplace_back(*this);
         }
-        for (auto& ch : channels_) {
-            ch.add_voice();
-        }
-        m.at_next_tick([&m] { m.global_volume(1.0f/num_channels); });
+        mixer_.at_next_tick([this] {
+            for (auto& ch : channels_) {
+                mixer_.add_voice(ch.get_voice());
+            }
+            mixer_.global_volume(1.0f/num_channels);
+        });
     }
 
     void set_samples(std::vector<sample>* samples) {
@@ -133,8 +138,16 @@ public:
         });
     }
 
-    void play() {
-        schedule();
+    void toggle_playing() {
+        mixer_.at_next_tick([this] {
+            playing_ = !playing_;
+            for (auto& ch : channels_) {
+                ch.get_voice().paused(!playing_);
+            }
+            if (playing_) {
+                schedule();
+            }
+        });
     }
 
     void on_position_changed(const callback_function_type<position>& cb) {
@@ -190,10 +203,8 @@ private:
         explicit channel(mod_player& player) : player_(player), mix_chan_(player.mixer_.sample_rate()) {
         }
 
-        void add_voice() {
-            player_.mixer_.at_next_tick([this] {
-                player_.mixer_.add_voice(mix_chan_);
-            });
+        sample_voice& get_voice() {
+            return mix_chan_;
         }
 
         void process_note(const module_note& note) {
@@ -442,21 +453,21 @@ private:
         }
     };
 
-    module mod_;
-    mixer& mixer_;
-    int      speed_ = 6;     // Number of ticks per row 1..127
-    int      order_ = 0;     // Position in order table 0..song length-1
-    int      row_ = -1;      // Current row in pattern
-    int      tick_ = 6;      // Current tick 0..speed
-    int      pattern_jump_ = -1;
-    int      pattern_break_row_ = -1;
-    int      pattern_delay_ = -1;
-    int      pattern_loop_row_ = -1;
-    int      pattern_loop_counter_ = -1;
-    std::vector<channel> channels_;
-
+    module               mod_;
+    mixer&               mixer_;
+    bool                 playing_ = false;
+    int                  speed_ = 6;     // Number of ticks per row 1..127
+    int                  order_ = 0;     // Position in order table 0..song length-1
+    int                  row_ = -1;      // Current row in pattern
+    int                  tick_ = 6;      // Current tick 0..speed
+    int                  pattern_jump_ = -1;
+    int                  pattern_break_row_ = -1;
+    int                  pattern_delay_ = -1;
+    int                  pattern_loop_row_ = -1;
+    int                  pattern_loop_counter_ = -1;
     std::vector<sample>* samples_ = nullptr;
-    event<position> on_position_changed_;
+    event<position>      on_position_changed_;
+    std::vector<channel> channels_;
 
     void schedule() {
         mixer_.at_next_tick([this] { tick(); });
@@ -480,6 +491,10 @@ private:
     }
 
     void tick() {
+        if (!playing_) {
+            return;
+        }
+
         if (++tick_ >= speed_) {
             tick_ = 0;
             if (pattern_delay_ > 0) {
@@ -691,6 +706,11 @@ int main(int argc, char* argv[])
                 keyboard_voice.play(samples[idx], 0); 
             });
         });
+        main_wnd.on_start_stop([&]() {
+            if (mod_player_) {
+                mod_player_->toggle_playing();
+            }
+        });
 
         ShowWindow(main_wnd.hwnd(), SW_SHOW);
         UpdateWindow(main_wnd.hwnd());
@@ -710,7 +730,7 @@ int main(int argc, char* argv[])
                 });
             });
             //mod_player_->skip_to_order(20);
-            mod_player_->play();
+            mod_player_->toggle_playing();
         }
 
         MSG msg;

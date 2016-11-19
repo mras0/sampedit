@@ -17,6 +17,8 @@ public:
     void freq(float f);
     void volume(float volume);
 
+    void paused(bool pause);
+
 private:
     class impl;
     std::unique_ptr<impl> impl_;

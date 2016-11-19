@@ -148,6 +148,10 @@ public:
         sample_edit_->on_piano_key_pressed(cb);
     }
 
+    void on_start_stop(const callback_function_type<>& cb) {
+        on_start_stop_.subscribe(cb);
+    }
+
     int current_sample_index() const {
         return sample_edit_->current_sample_index();
     }
@@ -159,6 +163,7 @@ public:
 private:
     friend window_base<main_window_impl>;
     virtual_grid& grid_;
+    event<>   on_start_stop_;
 
     explicit main_window_impl(virtual_grid& grid) : grid_(grid), tab_font_(create_default_font(14)) {
     }
@@ -250,6 +255,9 @@ private:
         case '5': case '6': case '7': case '8': case '9':
             set_tab_page((vk == '0' ? 10 : vk - '0') - 1);
             break;
+        case VK_RETURN:
+            on_start_stop_();
+            break;
         case VK_ESCAPE:
             SendMessage(hwnd(), WM_CLOSE, 0, 0);
             break;
@@ -274,8 +282,7 @@ private:
     }
 };
 
-main_window main_window::create(virtual_grid& grid)
-{
+main_window main_window::create(virtual_grid& grid) {
     INITCOMMONCONTROLSEX icce{ sizeof(INITCOMMONCONTROLSEX), ICC_TAB_CLASSES };
     if (!InitCommonControlsEx(&icce)) {
         fatal_error(L"InitCommonControlsEx");
@@ -284,22 +291,22 @@ main_window main_window::create(virtual_grid& grid)
     return main_window{main_window_impl::create(nullptr, grid)->hwnd()};
 }
 
-int main_window::current_sample_index() const
-{
+int main_window::current_sample_index() const {
     return main_window_impl::from_hwnd(hwnd())->current_sample_index();
 }
 
-void main_window::set_samples(const std::vector<sample>& s)
-{
+void main_window::set_samples(const std::vector<sample>& s) {
     main_window_impl::from_hwnd(hwnd())->set_samples(s);
 }
 
-void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& cb)
-{
+void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
     main_window_impl::from_hwnd(hwnd())->on_piano_key_pressed(cb);
+}
+
+void main_window::on_start_stop(const callback_function_type<>& cb) {
+    main_window_impl::from_hwnd(hwnd())->on_start_stop(cb);
 }
 
 void main_window::update_grid(int centered_row) const {
     main_window_impl::from_hwnd(hwnd())->update_grid(centered_row);
-
 }
