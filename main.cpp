@@ -10,6 +10,8 @@
 #include <win32/sample_window.h>
 #include <win32/main_window.h>
 
+#include <base/job_queue.h>
+#include <base/sample_voice.h>
 #include "module.h"
 #include "win32/wavedev.h"
 
@@ -31,139 +33,40 @@ std::vector<float> convert_sample_data(const std::vector<signed char>& d) {
     return data;
 }
 
-#include <queue>
-#include <mutex>
-class job_queue {
-public:
-    using job_type = std::function<void(void)>;
-
-    explicit job_queue() {
-    }
-
-    void push(job_type job) {
-        std::lock_guard<std::mutex> lock{mutex_};
-        jobs_.push(job);
-    }
-
-    void perform_all() {
-        std::queue<job_type> jobs;
-        {
-            std::lock_guard<std::mutex> lock{mutex_};
-            jobs = std::move(jobs_);
-        }
-        while (!jobs.empty()) {
-            jobs.front()();
-            jobs.pop();
-        }
-    }
-
-private:
-    std::mutex           mutex_;
-    std::queue<job_type> jobs_;
-};
-
 class mixer {
 public:
-    class channel {
-    public:
-        explicit channel() {
-        }
+    explicit mixer()
+        : wavedev_(sample_rate_, 4096, [this](short* s, size_t num_stereo_samples) { render(s, static_cast<int>(num_stereo_samples)); }) {
+    }
 
-        void key_off() {
-            state_ = state::not_playing;
-        }
-
-        void play(const ::sample& s, int pos) {
-            assert(pos >= 0 && pos <= s.length());
-            sample_ = &s;
-            pos_    = static_cast<float>(pos);
-            state_  = state::playing_first;
-        }
-
-        void freq(float f) {
-            incr_ = f / sample_rate;
-        }
-
-        void volume(float volume) {
-            volume_ = volume;
-        }
-
-        void mix(float* stero_buffer, int num_stereo_samples) {
-            if (state_ == state::not_playing) return;
-            assert(sample_);
-
-            while (num_stereo_samples) {
-                const int end = state_ == state::looping ? sample_->loop_start() + sample_->loop_length() : sample_->length();
-                assert(pos_ <= end);
-                const int samples_till_end = static_cast<int>((end - pos_) / incr_);
-                if (!samples_till_end) {
-                    if (sample_->loop_length()) {
-                        assert(state_ == state::playing_first || state_ == state::looping);
-                        pos_   = static_cast<float>(sample_->loop_start());
-                        state_ = state::looping;
-                        continue;
-                    } else {
-                        //wprintf(L"End of sample at %f\n", pos_);
-                        state_ = state::not_playing;
-                        break;
-                    }
-                }
-
-                const int now = std::min(samples_till_end, num_stereo_samples);
-                assert(now > 0);
-                do_mix(stero_buffer, now, *sample_, pos_, incr_, volume_, volume_);
-                num_stereo_samples -= now;
-                stero_buffer       += 2* now;
-                pos_               += incr_ * now;
-            }
-        }
-
-    private:
-        const ::sample* sample_ = nullptr;
-        float           pos_;
-        float           incr_;
-        float           volume_;
-        enum class state {
-            not_playing,
-            playing_first,
-            looping,
-        } state_ = state::not_playing;
-
-        static void do_mix(float* stero_buffer, int num_stereo_samples, const sample& samp, float pos, float incr, float lvol, float rvol) {
-            for (int i = 0; i < num_stereo_samples; ++i) {
-                const auto s = samp.get_linear(pos + i * incr);
-                stero_buffer[i*2+0] += s * lvol;
-                stero_buffer[i*2+1] += s * rvol;
-            }
-        }
-    };
-
-    explicit mixer(int channels)
-        : channels_(channels)
-        , mix_buffer_(buffer_size)
-        , wavedev_(sample_rate, buffer_size, [this](short* s, size_t count) { assert(count*2 == buffer_size); render(s); }) {
+    int sample_rate() const {
+        return sample_rate_;
     }
 
     void at_next_tick(job_queue::job_type job) {
-        at_next_tick_.push(job);
+        at_next_tick_.post(job);
     }
 
-    channel& get_channel(int index) {
-        return channels_[index];
+    void add_voice(voice& v) {
+        voices_.push_back(&v);
     }
 
     void ticks_per_second(int tps) {
         ticks_per_second_ = tps;
     }
 
-private:
-    static constexpr int sample_rate = 44100;
-    static constexpr int buffer_size = 4096;
+    void global_volume(float vol) {
+        global_volume_ = vol;
+    }
 
-    std::vector<channel> channels_;
+private:
+    static constexpr int sample_rate_ = 44100;
+
+    std::vector<voice*>  voices_;
     std::vector<float>   mix_buffer_;
     int                  next_tick_ = 0;
     int                  ticks_per_second_ = 50; // 125 BPM = 125 * 2 / 5 = 50 Hz
+    float                global_volume_ = 1.0f;
     job_queue            at_next_tick_;
     // must be last
     wavedev              wavedev_;
@@ -172,19 +75,20 @@ private:
         at_next_tick_.perform_all();
     }
 
-    void render(short* s) {
+    void render(short* s, int num_stereo_samples) {
+        mix_buffer_.resize(num_stereo_samples * 2);
         float* buffer = &mix_buffer_[0];
-        memset(buffer, 0, buffer_size * sizeof(float));
-        for (int num_stereo_samples = buffer_size / 2; num_stereo_samples;) {
+        memset(buffer, 0, num_stereo_samples * 2 * sizeof(float));
+        while (num_stereo_samples) {
             if (!next_tick_) {
                 tick();
-                next_tick_ = sample_rate / ticks_per_second_;
+                next_tick_ = sample_rate_ / ticks_per_second_;
             }
 
             const auto now = std::min(next_tick_, num_stereo_samples);
 
-            for (auto& ch : channels_) {
-                ch.mix(buffer, now);
+            for (auto v : voices_) {
+                v->mix(buffer, now);
             }
 
             buffer             += now * 2;
@@ -192,8 +96,8 @@ private:
             next_tick_         -= now;
         }
 
-        for (size_t i = 0; i < buffer_size; ++i) {
-            s[i] = sample_to_s16(mix_buffer_[i]/(channels_.size()/2));
+        for (size_t i = 0; i < mix_buffer_.size(); ++i) {
+            s[i] = sample_to_s16(mix_buffer_[i]*global_volume_);
         }
     }
 };
@@ -202,8 +106,12 @@ class mod_player {
 public:
     explicit mod_player(const module& mod, mixer& m) : mod_(mod), mixer_(m) {
         for (int i = 0; i < num_channels; ++i) {
-            channels_.emplace_back(*this, m.get_channel(i));
+            channels_.emplace_back(*this);
         }
+        for (auto& ch : channels_) {
+            ch.add_voice();
+        }
+        m.at_next_tick([&m] { m.global_volume(1.0f/num_channels); });
     }
 
     void set_samples(std::vector<sample>* samples) {
@@ -279,7 +187,14 @@ public:
 private:
     class channel {
     public:
-        explicit channel(mod_player& player, mixer::channel& mix_chan) : player_(player), mix_chan_(mix_chan) {}
+        explicit channel(mod_player& player) : player_(player), mix_chan_(player.mixer_.sample_rate()) {
+        }
+
+        void add_voice() {
+            player_.mixer_.at_next_tick([this] {
+                player_.mixer_.add_voice(mix_chan_);
+            });
+        }
 
         void process_note(const module_note& note) {
             if (note.sample) { 
@@ -436,7 +351,7 @@ private:
 
     private:
         mod_player&     player_;
-        mixer::channel& mix_chan_;
+        sample_voice    mix_chan_;
         int             sample_ = 0;
         int             volume_ = 0;
         int             period_ = 0;
@@ -732,7 +647,7 @@ private:
 int main(int argc, char* argv[])
 {
     try {
-        mixer m{32};
+        mixer m;
 
         std::vector<sample> samples;
         std::unique_ptr<mod_player> mod_player_;
@@ -759,19 +674,21 @@ int main(int argc, char* argv[])
         auto main_wnd = main_window::create(*grid);
         main_wnd.set_samples(samples);
 
+        sample_voice keyboard_voice(m.sample_rate());
+        keyboard_voice.volume(0.5f);
+        m.at_next_tick([&] { m.add_voice(keyboard_voice); });
         main_wnd.on_piano_key_pressed([&](piano_key key) {
             if (key == piano_key::OFF) {
-                m.at_next_tick([&] { m.get_channel(0).key_off(); } );
+                m.at_next_tick([&] { keyboard_voice.key_off(); } );
                 return;
             }
             const int idx = main_wnd.current_sample_index();
             if (idx < 0 || idx >= samples.size()) return;
             const auto freq = piano_key_to_freq(key, piano_key::C_5, samples[idx].c5_rate());
             wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
-            m.at_next_tick([&m, &samples, idx, freq] {
-                auto& ch = m.get_channel(0);
-                ch.freq(freq);
-                ch.play(samples[idx], 0); 
+            m.at_next_tick([&, idx, freq] {
+                keyboard_voice.freq(freq);
+                keyboard_voice.play(samples[idx], 0); 
             });
         });
 
@@ -781,7 +698,7 @@ int main(int argc, char* argv[])
         job_queue gui_jobs;
         const DWORD gui_thread_id = GetCurrentThreadId();
         auto add_gui_job = [&gui_jobs, gui_thread_id] (const job_queue::job_type& job) {
-            gui_jobs.push(job);
+            gui_jobs.post(job);
             PostThreadMessage(gui_thread_id, WM_NULL, 0, 0);
         };
 

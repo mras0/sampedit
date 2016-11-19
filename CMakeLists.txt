@@ -25,7 +25,10 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 add_executable(${PROJECT_NAME} main.cpp
     module.cpp module.h
+    base/job_queue.cpp base/job_queue.h
     base/sample.h
+    base/voice.h
+    base/sample_voice.cpp base/sample_voice.h
     base/note.cpp base/note.h
     base/virtual_grid.h
     win32/base.cpp win32/base.h
