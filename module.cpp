@@ -29,14 +29,42 @@ uint16_t read_be_u16(std::istream& in)
     return (static_cast<uint16_t>(hi)<<8) + lo;
 }
 
-module load_module(const char* filename)
-{
-    std::ifstream in(filename, std::ifstream::binary);
-    if (!in || !in.is_open()) {
-        throw std::runtime_error("Could not open " + std::string(filename));
+class stream_pos_saver {
+public:
+    explicit stream_pos_saver(std::istream& in) : in_(in), pos_(in_.tellg()) {
     }
+    ~stream_pos_saver() {
+        in_.seekg(pos_);
+    }
+    stream_pos_saver(const stream_pos_saver&) = delete;
+    stream_pos_saver& operator=(const stream_pos_saver&) = delete;
 
-    module mod;
+private:
+    std::istream&       in_;
+    std::ios::streampos pos_;
+};
+
+int mod_channels_from_id(char buf[4])
+{
+    if (buf[0] == 'M' && buf[1] == '.' && buf[2] == 'K' && buf[3] == '.') {
+        return 4;
+    }
+    if (isdigit(buf[0]) && isdigit(buf[1]) && buf[2] == 'C' && buf[3] == 'H') {
+        return (buf[0]-'0') * 10 + (buf[1] - '0');
+    }
+    return 0;
+}
+
+bool is_mod(std::istream& in)
+{
+    stream_pos_saver sps{in};
+    char buf[4];
+    return in.seekg(1080) && in.read(buf, sizeof(buf)) && mod_channels_from_id(buf) > 0;
+}
+
+void load_mod(std::istream& in, const char* filename, module& mod)
+{
+    assert(is_mod(in));
 
     in.read(mod.name, sizeof(mod.name));
     //printf("Songname: %-*s\n", (int)sizeof(mod.name), mod.name);
@@ -57,14 +85,12 @@ module load_module(const char* filename)
     mod.song_end    = read_be_u8(in);
     in.read(reinterpret_cast<char*>(mod.order), sizeof(mod.order));
     in.read(mod.format, sizeof(mod.format));
-    if (mod.num_order == 0 || mod.format[0] != 'M' || mod.format[1] != '.' || mod.format[2] != 'K' || mod.format[3] != '.') {
+    mod.num_channels = mod_channels_from_id(mod.format);
+    if (mod.num_order == 0 || mod.num_channels <= 0) {
         throw std::runtime_error("Not a supported module format " + std::string(filename));
-    }
-    mod.num_channels = 4;
+    }    
 
     const int num_patterns = *std::max_element(mod.order, mod.order + mod.num_order) + 1;
-
-    printf("Num patterns: %d\n", num_patterns);
 
     // 4 bytes for each channel for each of the 64 rows in each pattern
     int total_rows = mod.num_channels * 64 * num_patterns;
@@ -93,6 +119,20 @@ module load_module(const char* filename)
     if (!in || in.tellg() != p) {
         throw std::runtime_error("Couldn't read " + std::string(filename));
     }
+}
 
+module load_module(const char* filename)
+{
+    std::ifstream in(filename, std::ifstream::binary);
+    if (!in || !in.is_open()) {
+        throw std::runtime_error("Could not open " + std::string(filename));
+    }
+
+    module mod;
+    if (is_mod(in)) {
+        load_mod(in, filename, mod);
+    } else {
+        throw std::runtime_error("Unsupported format " + std::string(filename));
+    }
     return mod;
 }

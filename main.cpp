@@ -108,14 +108,14 @@ private:
 class mod_player {
 public:
     explicit mod_player(const module& mod, mixer& m) : mod_(mod), mixer_(m) {
-        for (int i = 0; i < num_channels; ++i) {
+        for (int i = 0; i < mod_.num_channels; ++i) {
             channels_.emplace_back(*this);
         }
         mixer_.at_next_tick([this] {
             for (auto& ch : channels_) {
                 mixer_.add_voice(ch.get_voice());
             }
-            mixer_.global_volume(1.0f/num_channels);
+            mixer_.global_volume(1.0f/mod_.num_channels);
         });
     }
 
@@ -154,7 +154,6 @@ public:
         on_position_changed_.subscribe(cb);
     }
 
-    static constexpr int num_channels = 4;
     static constexpr int num_rows     = 64;
     static constexpr int max_volume   = 64;
 
@@ -180,16 +179,24 @@ public:
         Octave 4: 107, 101,  95,  90,  85,  80,  76,  71,  67,  64,  60,  57
         */
 
-        constexpr int note_periods[12 * 5] = {
+        constexpr int note_periods[12 * 5 + 1] = {
             1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907,
             856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453,
             428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226,
             214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113,
             107, 101,  95,  90,  85,  80,  76,  71,  67,  64,  60,  57,
-        };
 
-        for (int i = 0; i < sizeof(note_periods) / sizeof(*note_periods); ++i) {
-            if (period == note_periods[i]) {
+            // DOPE.MOD has a note played at period 56
+            -1
+        };
+        const int count = sizeof(note_periods) / sizeof(*note_periods);
+
+        for (int i = 0; i < count - 1; ++i) {
+            if (period == note_periods[i] || (i+1 < count && period > note_periods[i+1])) {
+                if (period != note_periods[i]) {
+                    // DOPE.MOD uses non-protracker periods..
+                    //wprintf(L"Period %d isn't exact! Using %d\n", period, note_periods[i]);
+                }
                 return piano_key::C_0 + i + 2*12; // Octave offset: PT=0, FT2=2, MPT=3
             }
         }
@@ -476,7 +483,7 @@ private:
     void process_row() {
         pattern_break_row_ = -1;
         pattern_jump_      = -1;
-        for (int ch = 0; ch < num_channels; ++ch) {
+        for (int ch = 0; ch < mod_.num_channels; ++ch) {
             auto& channel = channels_[ch];
             const auto& note = mod_.at(order_, row_)[ch];
             channel.process_note(note);
@@ -532,7 +539,7 @@ private:
         } else {
             // Intra-row tick
         }
-        for (int ch = 0; ch < num_channels; ++ch) {
+        for (int ch = 0; ch < mod_.num_channels; ++ch) {
             auto& channel = channels_[ch];
             const auto& note = mod_.at(order_, row_)[ch];
             if (note.effect) {
@@ -625,17 +632,20 @@ private:
 
     virtual std::vector<int> do_column_widths() const override {
         constexpr int w = 10;
-        return { 2, w, w, w, w };
+        std::vector<int> ws(mod_.num_channels + 1, w);
+        ws[0] = 2; // row
+        return ws;
     }
 
     virtual std::string do_cell_value(int row, int column) const override {
         assert(row >= 0 && row < mod_player::num_rows);
-        assert(row >= 0 && column < mod_player::num_channels+1);
+        assert(column >= 0 && column < mod_.num_channels+1);
         std::ostringstream ss;
-        ss << std::hex << std::setfill('0') << std::uppercase;
+        ss << std::setfill('0') << std::uppercase;
         if (column == 0) {
             ss << std::setw(2) << row;
         } else {
+            ss << std::hex;
             const auto& note = mod_.at(order_, row)[column-1];
             if (note.period) {
                 ss << piano_key_to_string(mod_player::period_to_piano_key(note.period));
@@ -670,10 +680,10 @@ int main(int argc, char* argv[])
         if (argc > 1) {
             mod_player_.reset(new mod_player(load_module(argv[1]), m));
             auto& mod = mod_player_->mod();
-            wprintf(L"Loaded '%S' - '%22.22S'\n", argv[1], mod.name);
+            wprintf(L"Loaded '%S' - '%-22.22S' %d channels\n", argv[1], mod.name, mod.num_channels);
             for (int i = 0; i < 31; ++i) {
                 const auto& s = mod.samples[i];
-                wprintf(L"%22.22S FineTune: %d\n", s.name, s.finetune);
+                wprintf(L"%-22.22S FineTune: %d\n", s.name, s.finetune);
                 samples.emplace_back(convert_sample_data(s.data), 8363.0f*note_difference_to_scale(s.finetune/8.0f), std::string(s.name, s.name+sizeof(s.name)));
                 if (s.loop_length > 2) {
                     samples.back().loop_start(s.loop_start);

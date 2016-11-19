@@ -53,7 +53,7 @@ private:
 
         TEXTMETRIC tm;
         GetTextMetrics(hdc, &tm);
-        const SIZE font_size{tm.tmMaxCharWidth, tm.tmHeight};
+        const SIZE font_size{tm.tmAveCharWidth, tm.tmHeight};
 
         const int x_spacing = font_size.cx*2;
         const int y_spacing = 1;
