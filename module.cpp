@@ -16,6 +16,12 @@ const module_note* module::at(int ord, int row) const
     return &patterns[order[ord]][row * num_channels];
 }
 
+int module::note_to_period(piano_key note) const
+{
+    assert(type == module_type::mod);
+    return freq_to_amiga_period(piano_key_to_freq(note, piano_key::C_5, 8363));
+}
+
 std::vector<float> convert_sample_data(const std::vector<signed char>& d) {
     std::vector<float> data(d.size());
     for (size_t i = 0, len = d.size(); i < len; ++i) {
@@ -328,11 +334,6 @@ piano_key period_to_piano_key(int period) {
                 // DOPE.MOD uses non-protracker periods..
                 //wprintf(L"Period %d isn't exact! Using %d\n", period, note_periods[i]);
             }
-
-            //const auto k = piano_key::C_0 + i + 3*12;
-            //const float freq = piano_key_to_freq(k, piano_key::C_5, 8363);
-            //wprintf(L"period = %d, freq = %f, key = %S (%f)\n", period, period_to_freq(period), piano_key_to_string(k).c_str(), freq);
-
             return piano_key::C_0 + i + 3*12; // Octave offset: PT=0, FT2=2, MPT=3 (3 also matches a C5 speed of 8363 (period 428)
         }
     }
@@ -413,10 +414,15 @@ void load_mod(std::istream& in, const char* filename, module& mod)
 
                 module_note n;
                 n.instrument = (b[0]&0xf0) | (b[2]>>4);
-                n.period = ((b[0]&0x0f) << 8) | b[1];
+                const int period = ((b[0]&0x0f) << 8) | b[1];
                 n.effect = ((b[2] & 0x0f) << 8) | b[3];
                 n.volume = 0;
-                n.note   = period_to_piano_key(n.period);
+                n.note   = period_to_piano_key(period);
+                //if (period) {
+                //    const float freq = piano_key_to_freq(n.note, piano_key::C_5, 8363);
+                //    wprintf(L"period = %d, freq = %f, key = %S (%f)\n", period, amiga_period_to_freq(period), piano_key_to_string(n.note).c_str(), freq);
+                //}
+
                 this_pattern.push_back(n);
             }
         }

@@ -145,16 +145,6 @@ public:
     static constexpr int num_rows     = 64;
     static constexpr int max_volume   = 64;
 
-    static constexpr float clock_rate = 7159090.5f;
-
-    static float period_to_freq(int period) {
-        return clock_rate / (period * 2);
-    }
-
-    static int freq_to_period(float freq) {
-        return static_cast<int>(clock_rate / (2 * freq));
-    }
-
 private:
     class channel {
     public:
@@ -171,12 +161,14 @@ private:
                 sample_ = note.instrument;
                 volume(instrument().volume);
             }
-            if (note.period) {
+            if (note.note != piano_key::NONE) {
+                assert(note.note != piano_key::OFF);
+                const int period = player_.mod_.note_to_period(note.note);
                 const auto effect = note.effect>>8;
                 if (effect == 3 || effect == 5) {
-                    porta_target_period_ = note.period;
+                    porta_target_period_ = period;
                 } else {
-                    set_period(note.period);
+                    set_period(period);
                     if (effect != 9 && note.effect>>4 != 0xED) {
                         trig(0);
                     }
@@ -350,7 +342,7 @@ private:
         }
 
         void set_voice_period(int period) {
-            mix_chan_.freq(period_to_freq(period));
+            mix_chan_.freq(amiga_period_to_freq(period));
         }
 
         void set_period(int period) {
@@ -359,7 +351,7 @@ private:
         }
 
         void do_arpeggio(int amount) {
-            const int res_per = freq_to_period(period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
+            const int res_per = freq_to_amiga_period(amiga_period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
             //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
             set_voice_period(res_per);
         }
