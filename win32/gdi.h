@@ -31,6 +31,38 @@ struct dc_deleter {
 };
 using dc_ptr = std::unique_ptr<HDC__, dc_deleter>;
 
+struct window_dc {
+public:
+    explicit window_dc(HWND wnd) : wnd_(wnd), dc_(::GetDC(wnd)) {
+        assert(dc_);
+    }
+    window_dc(window_dc&& other) : wnd_(other.wnd_), dc_(other.dc_) {
+        other.dc_ = nullptr;
+    }
+    window_dc& operator=(window_dc&& other) {
+        assert(this != &other);
+        dc_       = other.dc_;
+        other.dc_ = nullptr;
+        return *this;
+    }
+    ~window_dc() {
+        if (dc_) {
+            const BOOL release_ok = ::ReleaseDC(wnd_, dc_);
+            assert(release_ok); (void)release_ok;
+        }
+    }
+
+    HDC get() const {
+        assert(dc_);
+        return dc_;
+    }
+
+private:
+    HWND    wnd_;
+    HDC     dc_;
+};
+
+
 class gdi_obj_restorer {
 public:
     explicit gdi_obj_restorer(HDC hdc, HGDIOBJ old) : hdc_(hdc), old_(old) {}
@@ -49,9 +81,13 @@ private:
     HGDIOBJ old_;
 };
 
+inline gdi_obj_restorer select(HDC hdc, HGDIOBJ obj) {
+    return gdi_obj_restorer{hdc, ::SelectObject(hdc, obj)};
+}
+
 template<typename T>
 gdi_obj_restorer select(HDC hdc, const gdi_obj_ptr<T>& obj) {
-    return gdi_obj_restorer{hdc, ::SelectObject(hdc, obj.get())};
+    return select(hdc, obj.get());
 }
 
 template<typename T>

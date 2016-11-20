@@ -82,6 +82,7 @@ private:
     X(WM_ERASEBKGND, (d.on_erase_background(reinterpret_cast<HDC>(wparam)) ? TRUE : FALSE)) \
     X(WM_CTLCOLORSTATIC, d.on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam))) \
     X(WM_KEYDOWN, (d.on_key_down(static_cast<int>(wparam), static_cast<unsigned>(lparam)), 0)) \
+    X(WM_TIMER, (d.on_timer(static_cast<uintptr_t>(wparam)), 0)) \
 
 // Keep the above line blank to allow a backslash on the last line of the MSG_HANDLERS macro
 

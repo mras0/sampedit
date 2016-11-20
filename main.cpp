@@ -116,10 +116,6 @@ public:
 
     const module& mod() const { return mod_; }
 
-    struct position {
-        int order, pattern, row;
-    };
-
     void skip_to_order(int order) {
         assert(order >= 0 && order < mod_.order.size());
         mixer_.at_next_tick([order, this] {
@@ -141,7 +137,7 @@ public:
         });
     }
 
-    void on_position_changed(const callback_function_type<position>& cb) {
+    void on_position_changed(const callback_function_type<module_position>& cb) {
         on_position_changed_.subscribe(cb);
     }
 
@@ -611,21 +607,21 @@ private:
 
     };
 
-    module               mod_;
-    mixer&               mixer_;
-    bool                 playing_ = false;
-    int                  speed_ = 6;     // Number of ticks per row 1..127
-    int                  order_ = 0;     // Position in order table 0..song length-1
-    int                  row_ = -1;      // Current row in pattern
-    int                  tick_ = 6;      // Current tick 0..speed
-    int                  pattern_jump_ = -1;
-    int                  pattern_break_row_ = -1;
-    int                  pattern_delay_ = -1;
-    int                  pattern_loop_row_ = -1;
-    int                  pattern_loop_counter_ = -1;
-    bool                 pattern_loop_ = false;
-    event<position>      on_position_changed_;
-    std::vector<channel> channels_;
+    module                  mod_;
+    mixer&                  mixer_;
+    bool                    playing_ = false;
+    int                     speed_ = 6;     // Number of ticks per row 1..127
+    int                     order_ = 0;     // Position in order table 0..song length-1
+    int                     row_ = -1;      // Current row in pattern
+    int                     tick_ = 6;      // Current tick 0..speed
+    int                     pattern_jump_ = -1;
+    int                     pattern_break_row_ = -1;
+    int                     pattern_delay_ = -1;
+    int                     pattern_loop_row_ = -1;
+    int                     pattern_loop_counter_ = -1;
+    bool                    pattern_loop_ = false;
+    event<module_position>  on_position_changed_;
+    std::vector<channel>    channels_;
 
     void schedule() {
         mixer_.at_next_tick([this] { tick(); });
@@ -696,7 +692,7 @@ private:
                     next_order();
                 }
                 process_row();
-                on_position_changed_(position{order_, mod_.order[order_], row_});
+                on_position_changed_(module_position{order_, mod_.order[order_], row_});
                 process_effects();
             }
         } else {
@@ -845,7 +841,7 @@ int main(int argc, char* argv[])
     try {
         mixer m;
 
-        const std::vector<sample>* samples;
+        const module* mod_ = nullptr;
         std::unique_ptr<mod_player> mod_player_;
         std::unique_ptr<mod_like_grid> grid;
         if (argc > 1) {
@@ -856,16 +852,17 @@ int main(int argc, char* argv[])
                 const auto& s = mod.samples[i];
                 wprintf(L"%2.2d: %-22.22S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(s.c5_rate()+0.5f));
             }
-            samples = &mod.samples;
+            mod_ = &mod;
             grid.reset(new mod_grid{mod});
         } else {
-            static std::vector<sample> generated_samples;
-            generated_samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
-            samples = &generated_samples;
+            static module mod;
+            mod.samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
             grid.reset(new test_grid{});
+            mod_ = &mod;
         }
         auto main_wnd = main_window::create(*grid);
-        main_wnd.set_samples(*samples);
+        assert(mod_);
+        main_wnd.set_module(*mod_);
 
         sample_voice keyboard_voice(m.sample_rate());
         keyboard_voice.volume(0.5f);
@@ -877,12 +874,12 @@ int main(int argc, char* argv[])
                 return;
             }
             const int idx = main_wnd.current_sample_index();
-            if (idx < 0 || idx >= samples->size()) return;
-            const auto freq = piano_key_to_freq(key, piano_key::C_5, (*samples)[idx].c5_rate());
+            if (idx < 0 || idx >= mod_->samples.size()) return;
+            const auto freq = piano_key_to_freq(key, piano_key::C_5, mod_->samples[idx].c5_rate());
             wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
             m.at_next_tick([&, idx, freq] {
                 keyboard_voice.freq(freq);
-                keyboard_voice.play((*samples)[idx], 0); 
+                keyboard_voice.play(mod_->samples[idx], 0); 
             });
         });
         main_wnd.on_start_stop([&]() {
@@ -902,10 +899,10 @@ int main(int argc, char* argv[])
         };
 
         if (mod_player_) {
-            mod_player_->on_position_changed([&](const mod_player::position& pos) {
+            mod_player_->on_position_changed([&](const module_position& pos) {
                 add_gui_job([&main_wnd, &grid, pos] {
                     grid->do_order_change(pos.order);
-                    main_wnd.update_grid(pos.row);
+                    main_wnd.position_changed(pos);
                 });
             });
             const int skip_to = argc > 2 ? std::stoi(argv[2]) : 0;

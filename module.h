@@ -37,6 +37,10 @@ struct module_note {
 
 enum class module_type { mod, s3m };
 
+struct module_position {
+    int order, pattern, row;
+};
+
 struct module {
     module_type                            type;
     int                                    initial_speed = 6;

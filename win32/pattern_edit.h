@@ -2,6 +2,7 @@
 #define SAMPEDIT_WIN32_PATTERN_EDIT_H
 
 #include <win32/base.h>
+#include "module.h"
 
 class virtual_grid;
 
@@ -12,7 +13,8 @@ public:
 
     HWND hwnd() const { return hwnd_; }
 
-    void update_grid(int centered_row);
+    void set_module(const module& mod);
+    void position_changed(const module_position& pos);
 
 private:
     explicit pattern_edit(HWND hwnd) : hwnd_(hwnd) {}

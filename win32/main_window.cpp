@@ -140,8 +140,9 @@ class main_window_impl : public window_base<main_window_impl> {
 public:
     ~main_window_impl() = default;
 
-    void set_samples(const std::vector<sample>& s) {
-        sample_edit_->set_samples(s);
+    void set_module(const module& mod) {
+        sample_edit_->set_samples(mod.samples);
+        pattern_edit_.set_module(mod);
     }
 
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
@@ -156,8 +157,8 @@ public:
         return sample_edit_->current_sample_index();
     }
 
-    void update_grid(int centered_row) {
-        pattern_edit_.update_grid(centered_row);
+    void position_changed(const module_position& pos) {    
+        pattern_edit_.position_changed(pos);
     }
 
 private:
@@ -295,8 +296,8 @@ int main_window::current_sample_index() const {
     return main_window_impl::from_hwnd(hwnd())->current_sample_index();
 }
 
-void main_window::set_samples(const std::vector<sample>& s) {
-    main_window_impl::from_hwnd(hwnd())->set_samples(s);
+void main_window::set_module(const module& mod) {
+    main_window_impl::from_hwnd(hwnd())->set_module(mod);
 }
 
 void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
@@ -307,6 +308,6 @@ void main_window::on_start_stop(const callback_function_type<>& cb) {
     main_window_impl::from_hwnd(hwnd())->on_start_stop(cb);
 }
 
-void main_window::update_grid(int centered_row) const {
-    main_window_impl::from_hwnd(hwnd())->update_grid(centered_row);
+void main_window::position_changed(const module_position& pos) {
+    main_window_impl::from_hwnd(hwnd())->position_changed(pos);
 }
