@@ -326,10 +326,12 @@ private:
             } else {
                 int offset = 0;
                 set_period(period);
-                if (effchar == 'O') {
-                    offset = (note.effect&0xff) << 8;
-                    if (offset) sample_offset_ = offset;
-                    else offset = sample_offset_;
+                if (effchar != 'S' || ((note.effect>>4)&0xf) != 0xD) { // SDy Note delay
+                    if (effchar == 'O') {
+                        offset = (note.effect&0xff) << 8;
+                        if (offset) sample_offset_ = offset;
+                        else offset = sample_offset_;
+                    }
                 }
                 trig(offset);
             }
@@ -362,6 +364,9 @@ private:
             case 'A': // Set speed
                 player_.set_speed(xy);
                 break;
+            case 'B': // Pattern jump
+                if (!tick) wprintf(L"Pattern jump! B%02X\n", xy);
+                process_mod_effect(tick, 0xB00 | xy);
             case 'C': // Pattern break
                 process_mod_effect(tick, 0xD00 | xy);
                 break;
@@ -425,6 +430,12 @@ private:
                 switch(x) {
                 case 0xB: // Pattern Loop
                     process_mod_effect(tick, 0xE60 | y);
+                    break;
+                case 0xC: // Note cut
+                    process_mod_effect(tick, 0xEC0 | y);
+                    break;
+                case 0xD: // Note delay
+                    process_mod_effect(tick, 0xED0 | y);
                     break;
                 default:
                     if (!tick) wprintf(L"Ignoring effect %c%02X\n", effchar, xy);
