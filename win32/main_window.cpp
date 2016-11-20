@@ -145,6 +145,10 @@ public:
         pattern_edit_.set_module(mod);
     }
 
+    void on_exiting(const callback_function_type<>& cb) {
+        on_exiting_.subscribe(cb);
+    }
+
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
         sample_edit_->on_piano_key_pressed(cb);
     }
@@ -168,7 +172,8 @@ public:
 private:
     friend window_base<main_window_impl>;
     virtual_grid& grid_;
-    event<>   on_start_stop_;
+    event<>       on_exiting_;
+    event<>       on_start_stop_;
 
     explicit main_window_impl(virtual_grid& grid) : grid_(grid), tab_font_(create_default_font(14)) {
     }
@@ -246,6 +251,7 @@ private:
     }
 
     void on_destroy() {
+        on_exiting_();
         PostQuitMessage(0);
     }
 
@@ -302,6 +308,10 @@ int main_window::current_sample_index() const {
 
 void main_window::set_module(const module& mod) {
     main_window_impl::from_hwnd(hwnd())->set_module(mod);
+}
+
+void main_window::on_exiting(const callback_function_type<>& cb) {
+    main_window_impl::from_hwnd(hwnd())->on_exiting(cb);
 }
 
 void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& cb) {

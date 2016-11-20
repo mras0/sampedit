@@ -16,6 +16,7 @@ public:
     int current_sample_index() const;
     void set_module(const module& mod);
 
+    void on_exiting(const callback_function_type<>& cb);
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb);
     void on_start_stop(const callback_function_type<>& cb);
     void on_order_selected(const callback_function_type<int>& cb);

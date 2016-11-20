@@ -128,15 +128,15 @@ public:
         });
     }
 
+    void stop() {
+        mixer_.at_next_tick([this] {
+            set_playing(false);
+        });
+    };
+
     void toggle_playing() {
         mixer_.at_next_tick([this] {
-            playing_ = !playing_;
-            for (auto& ch : channels_) {
-                ch.get_voice().paused(!playing_);
-            }
-            if (playing_) {
-                schedule();
-            }
+            set_playing(!playing_);
         });
     }
 
@@ -636,10 +636,19 @@ private:
         mixer_.at_next_tick([this] { tick(); });
     }
 
+    void set_playing(bool playing) {
+        playing_ = playing;
+        for (auto& ch : channels_) {
+            ch.get_voice().paused(!playing_);
+        }
+        if (playing_) {
+            schedule();
+        }
+    }
+
     void notify_position_change() {
         on_position_changed_(module_position{order_, mod_.order[order_], std::max(0, row_)});
     }
-
 
     void process_row() {
         pattern_break_row_ = -1;
@@ -912,12 +921,18 @@ int main(int argc, char* argv[])
             PostThreadMessage(gui_thread_id, WM_NULL, 0, 0);
         };
 
+        bool exiting = false;
         if (mod_player_) {
             mod_player_->on_position_changed([&](const module_position& pos) {
                 add_gui_job([&main_wnd, &grid, pos] {
                     grid->do_order_change(pos.order);
                     main_wnd.position_changed(pos);
                 });
+            });
+            main_wnd.on_exiting([&]() {
+                wprintf(L"Exiting\n");
+                exiting = true;
+                mod_player_->stop();
             });
             main_wnd.on_order_selected([&](int order) {
                mod_player_->skip_to_order(order);
@@ -932,7 +947,9 @@ int main(int argc, char* argv[])
         MSG msg;
         while (GetMessage(&msg, nullptr, 0, 0)) {
             if (msg.hwnd == nullptr && msg.message == WM_NULL) {
-                gui_jobs.perform_all();
+                if (!exiting) {
+                    gui_jobs.perform_all();
+                }
             } else {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
