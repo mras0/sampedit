@@ -314,7 +314,7 @@ private:
             const int period = player_.mod_.note_to_period(note.note);
             const char effchar = static_cast<char>((note.effect>>8)-1+'A');
             if (effchar == 'G') {
-                porta_target_period_ = period_;
+                porta_target_period_ = period;
             } else {
                 int offset = 0;
                 set_period(period);
@@ -402,8 +402,15 @@ private:
                 porta_target_period_ = period;
             } else {
                 set_period(period);
-                if (effect != 9 && note.effect>>4 != 0xED) {
-                    trig(0);
+
+                if (note.effect>>4 != 0xED) {
+                    int offset = 0;
+                    if (effect == 9) {
+                        offset = (note.effect & 0xff) << 8;
+                        if (offset) sample_offset_ = offset;
+                        else offset = sample_offset_;
+                    }
+                    trig(offset);
                 }
             }
         }
@@ -462,10 +469,6 @@ private:
             case 0x8: // 8xy
                 return; // ignored
             case 0x9: // 9xy Sample offset
-                if (!tick) {
-                    if (xy) sample_offset_ = xy << 8;
-                    trig(sample_offset_);
-                }
                 return;
             case 0xA: // Axy Volume slide
                 if (tick) {
@@ -586,7 +589,6 @@ private:
     void next_order() {
         if (++order_ >= mod_.order.size()) {
             order_ = 0; // TODO: Use restart pos
-            assert(!"Song done!");
         }
     }
 
