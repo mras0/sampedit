@@ -438,11 +438,15 @@ private:
                     process_mod_effect(tick, 0xED0 | y);
                     break;
                 default:
-                    if (!tick) wprintf(L"Ignoring effect %c%02X\n", effchar, xy);
+                    if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", player_.row_, effchar, xy);
                 }
                 break;
+            case 'T': // Txy Set tempo
+                assert(xy >= 0x20);
+                player_.set_tempo(xy);
+                break;
             default:
-                if (!tick) wprintf(L"Ignoring effect %c%02X\n", effchar, xy);
+                if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", player_.row_, effchar, xy);
             }
         }
 

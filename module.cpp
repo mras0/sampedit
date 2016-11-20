@@ -12,8 +12,9 @@ const module_note* module::at(int ord, int row) const
     assert(ord < order.size());
     assert(order[ord] < patterns.size());
     assert(row < 64);
-
-    return &patterns[order[ord]][row * num_channels];
+    const auto& pattern = patterns[order[ord]];
+    assert((row+1) * num_channels - 1 < pattern.size());
+    return &pattern[row * num_channels];
 }
 
 int module::note_to_period(piano_key note) const
@@ -248,6 +249,12 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
     constexpr int rows_per_pattern = 64;
 
     for (int i = 0; i < num_patterns; ++i) {
+        if (!pattern_pointers[i]) {
+            // Push an empty pattern if there is no pattern data
+            mod.patterns.push_back(std::vector<module_note>());
+            continue;
+        }
+
         s3m_seek(in, pattern_pointers[i]);
         const uint16_t packed_length = read_le_u16(in);
         module_note row_data[32];
@@ -304,8 +311,13 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
             if (b & 0x80) {
                 const uint8_t effect       = read_le_u8(in);
                 const uint8_t effect_param = read_le_u8(in);
-                rd.effect = (effect << 8) | effect_param;
-                assert(rd.effect);
+                if (effect) {
+                    assert(effect <= 26);
+                    rd.effect = (effect << 8) | effect_param;
+                } else {
+                    // 2nd_pm.s3m has 0 effect in order 22 (pattern 13) row 19
+                    rd.effect = 0;
+                }
             }
         }
 
