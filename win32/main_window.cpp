@@ -106,7 +106,7 @@ private:
         });
         sample_list_wnd_ = CreateWindow(WC_LISTBOX, L"", WS_CHILD|WS_VISIBLE|WS_VSCROLL|LBS_NOTIFY, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr);
         if (!sample_list_wnd_) fatal_error(L"CreateWindow(WC_LISTBOX)");
-        set_font(sample_info_wnd_, font_);
+        set_font(sample_list_wnd_, font_);
         return true;
     }
 
@@ -146,15 +146,15 @@ private:
     void on_key_down(int vk, unsigned /*extra*/) {
         if (vk == VK_SPACE) {
             on_piano_key_pressed_(piano_key::OFF);
-        } else if (vk == VK_OEM_PLUS) {
-            if (samples_) {
-                assert(sample_index_ >= 0);
-                select_sample((sample_index_ + 1) % samples_->size());
-            }
-        } else if (vk == VK_OEM_MINUS) {
+        } else if (vk == VK_UP) {
             if (samples_) {
                 assert(sample_index_ >= 0);
                 select_sample(sample_index_ ? sample_index_ - 1 : static_cast<int>(samples_->size()) - 1);
+            }
+        } else if (vk == VK_DOWN) {
+            if (samples_) {
+                assert(sample_index_ >= 0);
+                select_sample((sample_index_ + 1) % samples_->size());
             }
         } else {
             piano_key key = key_to_note(vk);
