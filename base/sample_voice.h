@@ -16,6 +16,7 @@ public:
     void play(const ::sample& s, int pos);
     void freq(float f);
     void volume(float volume);
+    void pan(float pan);
 
     void paused(bool pause);
 

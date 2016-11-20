@@ -3,6 +3,7 @@
 class sample_voice::impl {
 public:
     explicit impl(int sample_rate) : sample_rate_(sample_rate) {
+        pan(0.5f);
     }
 
     void key_off() {
@@ -23,6 +24,15 @@ public:
 
     void volume(float volume) {
         volume_ = volume;
+    }
+
+    void pan(float pan) {
+        assert(pan >= 0);
+        assert(pan <= 1);
+        constexpr float pi = 3.14159265359f;
+        const auto ang=pan*pi*0.5f;
+        panl_ = cos(pan);
+        panr_ = sin(pan);
     }
 
     void paused(bool pause) {
@@ -52,7 +62,7 @@ public:
 
             const int now = std::min(samples_till_end, num_stereo_samples);
             assert(now > 0);
-            do_mix_sample(stero_buffer, now, *sample_, pos_, incr_, volume_, volume_);
+            do_mix_sample(stero_buffer, now, *sample_, pos_, incr_, volume_ * panl_, volume_ * panr_);
             num_stereo_samples -= now;
             stero_buffer       += 2* now;
             pos_               += incr_ * now;
@@ -65,6 +75,8 @@ private:
     float           pos_;
     float           incr_;
     float           volume_;
+    float           panl_;
+    float           panr_;
     bool            paused_ = false;
     enum class state {
         not_playing,
@@ -103,6 +115,11 @@ void sample_voice::freq(float f) {
 void sample_voice::volume(float volume) {
     impl_->volume(volume);
 }
+
+void sample_voice::pan(float volume) {
+    impl_->pan(volume);
+}
+
 void sample_voice::paused(bool pause) {
     impl_->paused(pause);
 }

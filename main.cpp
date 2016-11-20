@@ -101,7 +101,8 @@ class mod_player {
 public:
     explicit mod_player(const module& mod, mixer& m) : mod_(mod), mixer_(m) {
         for (int i = 0; i < mod_.num_channels; ++i) {
-            channels_.emplace_back(*this);
+            channels_.emplace_back(*this, mod.channel_default_pan(i));
+            wprintf(L"%2d: Pan %d\n", i+1,mod.channel_default_pan(i));
         }
         mixer_.at_next_tick([this] {
             set_speed(mod_.initial_speed);
@@ -150,7 +151,8 @@ public:
 private:
     class channel {
     public:
-        explicit channel(mod_player& player) : player_(player), mix_chan_(player.mixer_.sample_rate()) {
+        explicit channel(mod_player& player, uint8_t default_pan) : player_(player), mix_chan_(player.mixer_.sample_rate()) {
+            mix_chan_.pan(default_pan / 255.0f);
         }
 
         sample_voice& get_voice() {
@@ -433,6 +435,11 @@ private:
                 break;
             case 'S':
                 switch(x) {
+                case 0x8: // Pan position
+                    if (!tick) {
+                        mix_chan_.pan((y<<4) / 255.0f);
+                    }
+                    break;
                 case 0xB: // Pattern Loop
                     process_mod_effect(tick, 0xE60 | y);
                     break;
@@ -870,10 +877,10 @@ int main(int argc, char* argv[])
         if (argc > 1) {
             mod_player_.reset(new mod_player(load_module(argv[1]), m));
             auto& mod = mod_player_->mod();
-            wprintf(L"Loaded '%S' - '%-20.20S' %d channels\n", argv[1], mod.name.c_str(), mod.num_channels);
+            wprintf(L"Loaded '%S' - '%S' %d channels\n", argv[1], mod.name.c_str(), mod.num_channels);
             for (size_t i = 0; i < mod.samples.size(); ++i) {
                 const auto& s = mod.samples[i];
-                wprintf(L"%2.2d: %-22.22S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(s.c5_rate()+0.5f));
+                wprintf(L"%2.2d: %-28S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(s.c5_rate()+0.5f));
             }
             mod_ = &mod;
             grid.reset(new mod_grid{mod});

@@ -52,11 +52,15 @@ struct module {
     std::vector<std::vector<module_note>>  patterns;
     std::vector<sample>                    samples;
 
+    struct {
+        std::vector<uint8_t> channel_panning;
+    } s3m;
+
     static constexpr int rows_per_pattern = 64;
 
     int note_to_period(piano_key note) const;
-
     const module_note* at(int order, int row) const;
+    int channel_default_pan(int channel) const;
 };
 
 module load_module(const char* filename);

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <assert.h>
 
+constexpr uint8_t default_pan_value = 0x30;
+
 const module_note* module::at(int ord, int row) const
 {
     assert(ord < order.size());
@@ -25,6 +27,18 @@ int module::note_to_period(piano_key note) const
     } else {
         assert(type == module_type::s3m);
         return 4 * amiga_period;
+    }
+}
+
+int module::channel_default_pan(int channel) const
+{
+    assert(channel >= 0 && channel < num_channels);
+    if (type == module_type::mod) {
+        const bool left = channel % 4 == 0 || channel % 4 == 3;
+        return left ? default_pan_value : 0xFF - default_pan_value;
+    } else {
+        assert(type == module_type::s3m);
+        return s3m.channel_panning[channel];
     }
 }
 
@@ -160,7 +174,7 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
     mod.initial_tempo         = read_le_u8(in); // BPM
     const int master_volume   = read_le_u8(in); // 7-bit volume MSB set = stereo
     const int ultraclick_rem  = read_le_u8(in);
-    const int default_pan     = read_le_u8(in);
+    const int default_pan     = read_le_u8(in); // 252 = default
     skip(in, 10); // Skip expansion (8 bytes) and special (2 bytes)
     assert((int)in.tellg() == 0x40);
     wprintf(L"S3M tracker version: %4.4X\n", tracker_version);
@@ -175,9 +189,16 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
     constexpr int max_channels = 32;
     int num_channels = 0;
     int channel_remap[max_channels];
+    int channel_pan[max_channels];
     for (int i = 0; i < max_channels; ++i) {
         const auto setting = read_le_u8(in);
-        channel_remap[i] = setting < 16 ? num_channels++ : -1;
+        if (setting < 16) {
+            channel_remap[i] = num_channels++;
+            channel_pan[channel_remap[i]] = setting < 8 ? default_pan_value : 0xFF - default_pan_value;
+        } else {
+            channel_remap[i] = -1;
+            channel_pan[i] = -1;
+        }
     }
     assert(num_channels > 0);
     mod.num_channels = num_channels;
@@ -195,6 +216,27 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
     
     wprintf(L"Song name: '%S', %d channel(s), len %d, %d instrument(s), %d pattern(s)\n", mod.name.c_str(), num_channels, song_length, num_instruments, num_patterns);
 
+    if (default_pan == 252) {
+        for (int i = 0; i < max_channels; ++i) {
+            const uint8_t val = read_le_u8(in) & 0xf;
+            const int chidx = channel_remap[i];
+            if (chidx >= 0) {
+                channel_pan[chidx] = val << 4;
+            }
+        }
+    }
+
+    if (!(master_volume & 0x80)) {
+        wprintf(L"Making song mono!\n");
+        for (auto& p : channel_pan) p = 0x80;
+    }
+
+    for (int i = 0; i < num_channels; ++i) {
+        assert(channel_pan[i] >= 0 && channel_pan[i] <= 0xFF);
+        mod.s3m.channel_panning.push_back(static_cast<uint8_t>(channel_pan[i]));
+    }
+
+
     for (int i = 0; i < num_instruments; ++i) {
         s3m_seek(in, instrument_pointers[i]);
         const uint8_t type = read_le_u8(in);
@@ -207,17 +249,17 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
         char dos_filename[12];
         in.read(dos_filename, sizeof(dos_filename));
         // Read oddball 24-bit memseg value
-        const uint32_t upper       = read_le_u8(in);
-        const uint32_t lower       = read_le_u16(in);
-        const uint32_t memseg      = (upper << 16) | lower;
-        const uint32_t length      = read_le_u32(in);
-        const uint32_t loop_start  = read_le_u32(in);
-        const uint32_t loop_end    = read_le_u32(in);
-        const uint8_t  volume      = read_le_u8(in);
-                                     read_le_u8(in); // unused
-        const uint8_t packing      = read_le_u8(in);
-        const uint8_t sample_flags = read_le_u8(in); // 1 = loop
-        const uint32_t c2spd       = read_le_u32(in);
+        const uint32_t upper        = read_le_u8(in);
+        const uint32_t lower        = read_le_u16(in);
+        const uint32_t memseg       = (upper << 16) | lower;
+        const uint32_t length       = read_le_u32(in);
+        const uint32_t loop_start   = read_le_u32(in);
+        const uint32_t loop_end     = read_le_u32(in);
+        const uint8_t  volume       = read_le_u8(in);
+                                      read_le_u8(in); // unused
+        const uint8_t  packing      = read_le_u8(in);
+        const uint8_t  sample_flags = read_le_u8(in); // 1 = loop
+        const uint32_t c2spd        = read_le_u32(in);
         skip(in, 12);
         const auto name            = read_string(in, 28);
         const uint32_t samplesig   = read_le_u32(in);
