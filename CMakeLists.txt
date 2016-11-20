@@ -37,6 +37,7 @@ add_executable(${PROJECT_NAME} main.cpp
     win32/text_grid.cpp win32/text_grid.h
     win32/pattern_edit.cpp win32/pattern_edit.h
     win32/main_window.cpp win32/main_window.h
+    win32/info_window.cpp win32/info_window.h
     win32/wavedev.cpp win32/wavedev.h
     )
 target_link_libraries(${PROJECT_NAME} comctl32.lib)

@@ -829,8 +829,8 @@ private:
         assert(row >= 0 && row < mod_player::num_rows);
         assert(column >= 0 && column < mod_.num_channels);
         std::ostringstream ss;
-        ss << std::hex << std::setfill('0') << std::uppercase;
         const auto& note = mod_.at(order_, row)[column];
+        ss << std::setfill('0') << std::uppercase;
         if (note.note != piano_key::NONE) {
             ss << piano_key_to_string(note.note) << ' ';
         } else {
@@ -845,12 +845,13 @@ private:
             assert(mod_.type == module_type::s3m);
             if (note.volume != no_volume_byte) {
                 assert(note.volume < 100);
-                ss << 'v' << std::setw(2) << std::dec << (int)note.volume << std::hex << ' ';
+                ss << 'v' << std::setw(2) << (int)note.volume << ' ';
             } else {
                 ss << "... ";
             }
         }
         if (note.effect) {
+            ss << std::hex;
             if (mod_.type == module_type::mod) {
                 ss << std::setw(3) << (int)note.effect;
             } else {

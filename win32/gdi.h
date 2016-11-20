@@ -98,6 +98,11 @@ gdi_obj_restorer select(const dc_ptr& dc, const gdi_obj_ptr<T>& obj) {
 font_ptr create_default_font(int height);
 font_ptr create_default_tt_font(int height);
 
+inline void set_font(HWND window, const font_ptr& font) {
+    assert(font);
+    SendMessage(window, WM_SETFONT, reinterpret_cast<WPARAM>(font.get()), 0);
+}
+
 template<typename Derived>
 struct double_buffered_paint {
     void on_paint() {

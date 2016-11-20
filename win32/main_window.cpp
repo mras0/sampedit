@@ -1,6 +1,7 @@
 #include <win32/main_window.h>
 #include <win32/sample_window.h>
 #include <win32/pattern_edit.h>
+#include <win32/info_window.h>
 #include <win32/gdi.h>
 #include <sstream>
 #include <iomanip>
@@ -8,11 +9,6 @@
 // Enable v6 common controls
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #include <commctrl.h>
-
-void set_font(HWND window, const font_ptr& font) {
-    assert(font);
-    SendMessage(window, WM_SETFONT, reinterpret_cast<WPARAM>(font.get()), 0);
-}
 
 class sample_edit : public window_base<sample_edit> {
 public:
@@ -176,6 +172,7 @@ public:
     void set_module(const module& mod) {
         sample_edit_->set_samples(mod.samples);
         pattern_edit_.set_module(mod);
+        info_window_.set_module(mod);
     }
 
     void on_exiting(const callback_function_type<>& cb) {
@@ -196,6 +193,7 @@ public:
 
     void position_changed(const module_position& pos) {    
         pattern_edit_.position_changed(pos);
+        info_window_.position_changed(pos);
     }
 
     void on_order_selected(const callback_function_type<int>& cb) {
@@ -269,6 +267,7 @@ private:
     //
     pattern_edit   pattern_edit_;
     sample_edit*   sample_edit_;
+    info_window    info_window_;
 
     bool on_create() {
         SetWindowText(hwnd(), L"SampEdit");
@@ -278,8 +277,10 @@ private:
         set_font(tab_control_wnd_, tab_font_);
         sample_edit_  = sample_edit::create(tab_control_wnd_);
         pattern_edit_ = pattern_edit::create(tab_control_wnd_, grid_);
+        info_window_  = info_window::create(tab_control_wnd_);
         add_tab_page(L"Pattern", pattern_edit_.hwnd());
         add_tab_page(L"Sample", sample_edit_->hwnd());
+        add_tab_page(L"Info", info_window_.hwnd());
         return true;
     }
 

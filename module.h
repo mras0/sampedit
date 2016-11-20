@@ -36,6 +36,7 @@ struct module_note {
 };
 
 enum class module_type { mod, s3m };
+constexpr const char* const module_type_name[] = { "MOD", "S3M" };
 
 struct module_position {
     int order, pattern, row;
