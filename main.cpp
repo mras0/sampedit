@@ -122,6 +122,9 @@ public:
             // TODO: Process (some) effects...
             wprintf(L"Skipping to order %d, cur = %d\n", order, order_);
             order_ = order;
+            row_   = -1;
+            tick_  = speed_;
+            notify_position_change();
         });
     }
 
@@ -210,7 +213,10 @@ private:
 
         void set_voice_period(int period) {
             assert(period > 0);
-            assert(sample_);
+            if (!sample_) {
+                wprintf(L"Warning: No sample. Ignoring period %d\n", period);
+                return;
+            }
             auto& s = player_.mod_.samples[sample_-1];
             const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
             if (player_.mod_.type == module_type::mod) {
@@ -302,7 +308,10 @@ private:
 
         void trig(int offset) {
             vib_pos_ = 0;
-            assert(sample_);
+            if (!sample_) {
+                wprintf(L"Warning: No sample. Ignoring trig offset %d\n", offset);
+                return;
+            }
             auto& s = player_.mod_.samples[sample_-1];
             if (s.length()) {
                 mix_chan_.play(s, std::min(s.length(), offset));
@@ -627,6 +636,11 @@ private:
         mixer_.at_next_tick([this] { tick(); });
     }
 
+    void notify_position_change() {
+        on_position_changed_(module_position{order_, mod_.order[order_], std::max(0, row_)});
+    }
+
+
     void process_row() {
         pattern_break_row_ = -1;
         pattern_jump_      = -1;
@@ -692,7 +706,7 @@ private:
                     next_order();
                 }
                 process_row();
-                on_position_changed_(module_position{order_, mod_.order[order_], row_});
+                notify_position_change();
                 process_effects();
             }
         } else {
@@ -904,6 +918,9 @@ int main(int argc, char* argv[])
                     grid->do_order_change(pos.order);
                     main_wnd.position_changed(pos);
                 });
+            });
+            main_wnd.on_order_selected([&](int order) {
+               mod_player_->skip_to_order(order);
             });
             const int skip_to = argc > 2 ? std::stoi(argv[2]) : 0;
             if (skip_to > 0) {

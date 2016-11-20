@@ -112,7 +112,7 @@ private:
         // Sample data
         //
         {
-            pen_ptr pen{CreatePen(PS_SOLID, 1, RGB(255, 0, 0))};
+            pen_ptr pen{CreatePen(PS_SOLID, 1, default_text_color)};
             auto old_pen{select(hdc, pen)};
 
             bool first = true;
@@ -165,49 +165,51 @@ private:
         size_ = POINT{cx, cy};
     }
 
+    void on_lbutton_down(int x, int, unsigned) {
+        assert(state_ == state::normal);
+        if (!sample_ || sample_->length() < 1) return;
+        state_ = state::selecting;
+        selection_.x0 = zoom_.clamp(x_to_sample_pos(x));
+        change_end_selection(x);
+        SetCapture(hwnd());
+    }
+
+    void change_end_selection(int x) {
+        assert(sample_);
+        assert(state_ == state::selecting);
+        const auto new_end = zoom_.clamp(x_to_sample_pos(x));
+        if (selection_.x1 != new_end) {
+            selection_.x1 = new_end;
+            on_selection_change_(sample_range{std::min(selection_.x0, selection_.x1), std::max(selection_.x0, selection_.x1)});
+            InvalidateRect(hwnd(), nullptr, TRUE);
+        }
+    }
+
+    void on_lbutton_up(int x, int, unsigned) {
+        if (state_ != state::selecting) return;
+
+        assert(sample_);
+        ReleaseCapture();
+        change_end_selection(x);
+        state_ = state::normal;
+        if (selection_.x1 < selection_.x0) {
+            std::swap(selection_.x0, selection_.x1);
+        }
+    }
+
+    void on_mouse_move(int x, int, unsigned) {
+        if (state_ != state::selecting) return;
+        change_end_selection(x);
+    }
+
+    void on_rbutton_up(int x, int y, unsigned) {
+        RECT window_rect;
+        GetWindowRect(hwnd(), &window_rect);
+        menu_.track(window_rect.left + x, window_rect.top + y, hwnd());
+    }
+
     LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
         switch (umsg) {
-        case WM_LBUTTONDOWN:
-            assert(state_ == state::normal);
-            if (sample_) {
-                state_ = state::selecting;
-                selection_.x0 = selection_.x1 = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
-                on_selection_change_(selection_);
-                SetCapture(hwnd());
-                InvalidateRect(hwnd(), nullptr, TRUE);
-            }
-            break;
-
-        case WM_LBUTTONUP:
-            if (state_ == state::selecting) {
-                assert(sample_);
-                ReleaseCapture();
-                state_ = state::normal;
-                if (selection_.x1 < selection_.x0) {
-                    std::swap(selection_.x0, selection_.x1);
-                }
-            }
-            break;
-
-        case WM_MOUSEMOVE:
-            if (state_ == state::selecting) {
-                assert(sample_);
-                const auto new_end = zoom_.clamp(x_to_sample_pos(GET_X_LPARAM(lparam)));
-                if (selection_.x1 != new_end) {
-                    selection_.x1 = new_end;
-                    on_selection_change_(sample_range{std::min(selection_.x0, selection_.x1), std::max(selection_.x0, selection_.x1)});
-                    InvalidateRect(hwnd(), nullptr, TRUE);
-                }
-            }
-            break;
-
-        case WM_RBUTTONUP: {
-                RECT window_rect;
-                GetWindowRect(hwnd(), &window_rect);
-                menu_.track(window_rect.left + GET_X_LPARAM(lparam), window_rect.top + GET_Y_LPARAM(lparam), hwnd());
-            }
-            break;
-
         case WM_COMMAND:
             assert(state_ == state::normal);
             switch (LOWORD(wparam)) {

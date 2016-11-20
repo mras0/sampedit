@@ -70,7 +70,7 @@ private:
 
     struct handler_base {
         static LRESULT invoke(Derived& d, UINT umsg, WPARAM wparam, LPARAM lparam, ...) {
-            return d.wndproc(umsg, wparam, lparam);            
+            return d.wndproc(umsg, wparam, lparam);
         }
     };
 
@@ -86,6 +86,11 @@ private:
     X(WM_KEYDOWN, (d.on_key_down(static_cast<int>(wparam), static_cast<unsigned>(lparam)), 0)) \
     X(WM_TIMER, (d.on_timer(static_cast<uintptr_t>(wparam)), 0)) \
     X(WM_HSCROLL, (d.on_hscroll(static_cast<unsigned>(LOWORD(wparam)), static_cast<int>(static_cast<short>(HIWORD(wparam)))), 0)) \
+    X(WM_MOUSEMOVE, (d.on_mouse_move(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), static_cast<unsigned>(wparam)), 0)) \
+    X(WM_LBUTTONDOWN, (d.on_lbutton_down(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), static_cast<unsigned>(wparam)), 0)) \
+    X(WM_LBUTTONUP, (d.on_lbutton_up(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), static_cast<unsigned>(wparam)), 0)) \
+    X(WM_RBUTTONDOWN, (d.on_rbutton_down(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), static_cast<unsigned>(wparam)), 0)) \
+    X(WM_RBUTTONUP, (d.on_rbutton_up(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), static_cast<unsigned>(wparam)), 0)) \
 
 // Keep the above line blank to allow a backslash on the last line of the MSG_HANDLERS macro
 

@@ -18,6 +18,7 @@ public:
 
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb);
     void on_start_stop(const callback_function_type<>& cb);
+    void on_order_selected(const callback_function_type<int>& cb);
     void position_changed(const module_position& pos);
 
 private:

@@ -19,6 +19,10 @@ public:
         selected(pos.order);
     }
 
+    void on_order_selected(const callback_function_type<int>& cb) {
+        on_order_selected_.subscribe(cb);
+    }
+
 private:
     friend window_base<order_view>;
     static const wchar_t* class_name() { return L"order_view"; }
@@ -31,6 +35,7 @@ private:
     const module*   mod_ = nullptr;
     int             selected_ = -1;
     HWND            scrollbar_;
+    event<int>      on_order_selected_;
 
     explicit order_view() {
     }
@@ -74,6 +79,11 @@ private:
         assert(mod_);
         assert(pos >= 0 && pos < static_cast<int>(mod_->order.size()));
         return 2 + item_width() * pos;
+    }
+
+    int x_to_position(int x) const {
+        const int pos = (x-2) / item_width();
+        return mod_ && pos >= 0 && pos < static_cast<int>(mod_->order.size()) ? pos : -1;
     }
 
     RECT item_rect(int pos) const {
@@ -129,6 +139,15 @@ private:
         case SB_THUMBTRACK:     scroll_to(pos); break;
         case SB_TOP:            scroll_to(0); break;
         case SB_BOTTOM:         scroll_to(MAXLONG); break;
+        }
+    }
+
+    void on_lbutton_down(int x, int y, unsigned) {
+        if (y < y_spacing || y > item_height_ - y_spacing) return;
+
+        const int pos = x_to_position(x);
+        if (pos >= 0 && pos + scroll_origin_ < static_cast<int>(mod_->order.size())) {
+            on_order_selected_(pos + scroll_origin_);
         }
     }
 
@@ -188,9 +207,15 @@ public:
     void set_module(const module& mod) {
         order_view_->set_module(mod);
     }
+
     void position_changed(const module_position& pos) {
         text_grid_.centered_row(pos.row);
+        InvalidateRect(text_grid_.hwnd(), nullptr, TRUE); // Force text grid to repaint
         order_view_->position_changed(pos);
+    }
+
+    void on_order_selected(const callback_function_type<int>& cb) {
+        order_view_->on_order_selected(cb);
     }
 
 private:
@@ -232,4 +257,8 @@ void pattern_edit::set_module(const module& mod) {
 
 void pattern_edit::position_changed(const module_position& pos) {
     pattern_edit_impl::from_hwnd(hwnd())->position_changed(pos);
+}
+
+void pattern_edit::on_order_selected(const callback_function_type<int>& cb) {
+    pattern_edit_impl::from_hwnd(hwnd())->on_order_selected(cb);
 }

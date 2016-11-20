@@ -134,7 +134,7 @@ private:
         paint_rect.bottom = std::max(paint_rect.bottom, paint_rect.top);
         SetTextAlign(hdc, TA_LEFT|TA_TOP);
         const int rows  = grid_.rows();
-        const int row_offset = centered_row_ - mid_y / line_height;
+        const int row_offset = centered_row_ - mid_y / line_height + 1;
         const int row_min = std::max<int>(paint_rect.top / line_height + row_offset, 0);
         const int row_max = std::min<int>((paint_rect.bottom + line_height - 1) / line_height + row_offset, rows);
         const bool row_label_visible = true; // TODO: only draw if needed

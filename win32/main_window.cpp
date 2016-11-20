@@ -161,6 +161,10 @@ public:
         pattern_edit_.position_changed(pos);
     }
 
+    void on_order_selected(const callback_function_type<int>& cb) {
+        pattern_edit_.on_order_selected(cb);
+    }
+
 private:
     friend window_base<main_window_impl>;
     virtual_grid& grid_;
@@ -306,6 +310,10 @@ void main_window::on_piano_key_pressed(const callback_function_type<piano_key>& 
 
 void main_window::on_start_stop(const callback_function_type<>& cb) {
     main_window_impl::from_hwnd(hwnd())->on_start_stop(cb);
+}
+
+void main_window::on_order_selected(const callback_function_type<int>& cb) {
+    main_window_impl::from_hwnd(hwnd())->on_order_selected(cb);
 }
 
 void main_window::position_changed(const module_position& pos) {
