@@ -880,6 +880,7 @@ int main(int argc, char* argv[])
         } else {
             static module mod;
             mod.samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
+            mod.order.push_back(0);
             grid.reset(new test_grid{});
             mod_ = &mod;
         }

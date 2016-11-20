@@ -82,8 +82,11 @@ private:
     X(WM_SIZE, (d.on_size(static_cast<UINT>(wparam), GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)), 0)) \
     X(WM_PAINT, (d.on_paint(), 0)) \
     X(WM_ERASEBKGND, (d.on_erase_background(reinterpret_cast<HDC>(wparam)) ? TRUE : FALSE)) \
+    X(WM_NOTIFY, d.on_notify(*reinterpret_cast<const NMHDR*>(lparam))) \
     X(WM_CTLCOLORSTATIC, d.on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam))) \
+    X(WM_CTLCOLORLISTBOX, d.on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam))) \
     X(WM_KEYDOWN, (d.on_key_down(static_cast<int>(wparam), static_cast<unsigned>(lparam)), 0)) \
+    X(WM_COMMAND, (d.on_command(static_cast<int>(LOWORD(wparam)), reinterpret_cast<HWND>(lparam), static_cast<unsigned>(HIWORD(wparam))), 0)) \
     X(WM_TIMER, (d.on_timer(static_cast<uintptr_t>(wparam)), 0)) \
     X(WM_HSCROLL, (d.on_hscroll(static_cast<unsigned>(LOWORD(wparam)), static_cast<int>(static_cast<short>(HIWORD(wparam)))), 0)) \
     X(WM_MOUSEMOVE, (d.on_mouse_move(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), static_cast<unsigned>(wparam)), 0)) \

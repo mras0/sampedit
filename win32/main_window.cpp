@@ -20,7 +20,18 @@ public:
 
     void set_samples(const std::vector<sample>& s) {
         samples_ = &s;
+
+        ListBox_ResetContent(sample_list_wnd_);
+        for (size_t i = 0; i < s.size(); ++i) {
+            std::wstringstream wss;
+            wss << std::setw(2) << std::setfill(L'0') << i+1 << ": " << s[i].name().c_str();
+            if (ListBox_AddString(sample_list_wnd_, wss.str().c_str()) == LB_ERR) {
+                fatal_error(L"ListBox_AddString");
+            }
+        }
+
         select_sample(0);
+        ListBox_SetTopIndex(sample_list_wnd_, 0);
     }
 
     void on_piano_key_pressed(const callback_function_type<piano_key>& cb) {
@@ -51,6 +62,7 @@ private:
     HWND                       sample_info_wnd_;
     HWND                       zoom_info_wnd_;
     HWND                       selection_info_wnd_;
+    HWND                       sample_list_wnd_;
     int                        sample_index_= -1;
 
     event<piano_key>           on_piano_key_pressed_;
@@ -67,12 +79,13 @@ private:
             wss << "No sample selected\n";
             sample_index_ = -1;
         }
+        ListBox_SetCurSel(sample_list_wnd_, sample_index_);
         SetWindowText(sample_info_wnd_, wss.str().c_str());
         InvalidateRect(hwnd(), nullptr, TRUE);
     }
-
+    
     HWND create_label() {
-        HWND label_wnd = CreateWindow(L"STATIC", L"", WS_CHILD|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr);
+        HWND label_wnd = CreateWindow(WC_STATIC, L"", WS_CHILD|WS_VISIBLE, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr);
         if (!label_wnd) {
             fatal_error(L"CreateWindow");
         }
@@ -95,17 +108,37 @@ private:
             wss << "Selection " << r.x0 << ", " << r.x1;
             SetWindowText(selection_info_wnd_, wss.str().c_str());
         });
+        sample_list_wnd_ = CreateWindow(WC_LISTBOX, L"", WS_CHILD|WS_VISIBLE|WS_VSCROLL|LBS_NOTIFY, 0, 0, 400, 100, hwnd(), nullptr, nullptr, nullptr);
+        if (!sample_list_wnd_) fatal_error(L"CreateWindow(WC_LISTBOX)");
+        set_font(sample_info_wnd_, font_);
         return true;
     }
 
-    void on_size(UINT /*state*/, int cx, int /*cy*/) {
+    void on_command(int, HWND ctrl_wnd, unsigned code) {
+        if (ctrl_wnd == sample_list_wnd_) {
+            switch (code) {
+            case LBN_SELCHANGE:
+                {
+                    select_sample(ListBox_GetCurSel(sample_list_wnd_));
+                    HWND root_wnd = GetAncestor(hwnd(), GA_ROOT);
+                    SetFocus(root_wnd);
+                }
+                break;
+            }
+        }
+    }
+
+    void on_size(UINT /*state*/, const int cx, const int cy) {
         constexpr int s_h         = 400;
         constexpr int text_w      = 200;
         constexpr int text_offset = 10;
-        SetWindowPos(sample_wnd_.hwnd(), nullptr, 0, 0, cx, s_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        SetWindowPos(sample_info_wnd_, nullptr, text_offset, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
-        SetWindowPos(zoom_info_wnd_, nullptr, text_w+text_offset*2, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
-        SetWindowPos(selection_info_wnd_, nullptr, text_w*2+text_offset*3, s_h, text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(sample_wnd_.hwnd(),  nullptr, 0,                      0,                      cx,     s_h,              SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(sample_info_wnd_,    nullptr, text_offset,            s_h,                    text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(zoom_info_wnd_,      nullptr, text_w+text_offset*2,   s_h,                    text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(selection_info_wnd_, nullptr, text_w*2+text_offset*3, s_h,                    text_w, info_font_height, SWP_NOZORDER | SWP_NOACTIVATE);
+
+        const int listbox_y = s_h+info_font_height;
+        SetWindowPos(sample_list_wnd_,  nullptr, text_offset, listbox_y, cx - 2*text_offset,  cy-listbox_y, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     HBRUSH on_color_static(HDC hdc, HWND /*static_wnd*/) {
@@ -277,19 +310,15 @@ private:
         }
     }
 
-    LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
-        switch (umsg) {
-        case WM_NOTIFY:
-            switch (reinterpret_cast<const NMHDR*>(lparam)->code) {
-            case TCN_SELCHANGING:              
-                return on_tab_page_switching();
-            case TCN_SELCHANGE:
-                on_tab_page_switched();
-                return TRUE;
-            }
-            break;
+    LRESULT on_notify(const NMHDR& nmhdr) {
+        switch (nmhdr.code) {
+        case TCN_SELCHANGING:              
+            return on_tab_page_switching();
+        case TCN_SELCHANGE:
+            on_tab_page_switched();
+            return TRUE;
         }
-        return DefWindowProc(hwnd(), umsg, wparam, lparam);
+        return 0;
     }
 };
 

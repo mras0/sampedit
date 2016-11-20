@@ -208,27 +208,22 @@ private:
         menu_.track(window_rect.left + x, window_rect.top + y, hwnd());
     }
 
-    LRESULT wndproc(UINT umsg, WPARAM wparam, LPARAM lparam) {
-        switch (umsg) {
-        case WM_COMMAND:
-            assert(state_ == state::normal);
-            switch (LOWORD(wparam)) {
-            case menu_id_zoom:
-                if (selection_.valid()) {
-                    zoom_ = selection_;
-                    selection_ = sample_range{};
-                    InvalidateRect(hwnd(), nullptr, TRUE);
-                    on_zoom_change_(zoom_);
-                    on_selection_change_(selection_);
-                }
-                break;
-            case menu_id_undo_zoom:
-                undo_zoom();
-                break;
+    void on_command(int id, HWND, unsigned) {
+        assert(state_ == state::normal);
+        switch (id) {
+        case menu_id_zoom:
+            if (selection_.valid()) {
+                zoom_ = selection_;
+                selection_ = sample_range{};
+                InvalidateRect(hwnd(), nullptr, TRUE);
+                on_zoom_change_(zoom_);
+                on_selection_change_(selection_);
             }
             break;
+        case menu_id_undo_zoom:
+            undo_zoom();
+            break;
         }
-        return DefWindowProc(hwnd(), umsg, wparam, lparam);
     }
 };
 
