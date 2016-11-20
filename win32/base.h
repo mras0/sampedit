@@ -14,8 +14,8 @@
 
 extern void fatal_error(const wchar_t* api, unsigned error = GetLastError());
 
-constexpr COLORREF default_background_color = RGB(64, 64, 64);
-constexpr COLORREF default_text_color       = RGB(255, 127, 127);
+constexpr COLORREF default_background_color = RGB(0x20, 0x20, 0x20);
+constexpr COLORREF default_text_color       = RGB(0x3d, 0x74, 0xe2);
 
 template<typename Derived>
 class window_base {
@@ -70,9 +70,11 @@ private:
 
     struct handler_base {
         static LRESULT invoke(Derived& d, UINT umsg, WPARAM wparam, LPARAM lparam, ...) {
-            return d.wndproc(umsg, wparam, lparam);
+            return d.wndproc(umsg, wparam, lparam);            
         }
     };
+
+    
 
 #define MSG_HANDLERS(X) \
     X(WM_CREATE, (d.on_create() ? 0 : -1)) \
@@ -83,6 +85,7 @@ private:
     X(WM_CTLCOLORSTATIC, d.on_color_static(reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam))) \
     X(WM_KEYDOWN, (d.on_key_down(static_cast<int>(wparam), static_cast<unsigned>(lparam)), 0)) \
     X(WM_TIMER, (d.on_timer(static_cast<uintptr_t>(wparam)), 0)) \
+    X(WM_HSCROLL, (d.on_hscroll(static_cast<unsigned>(LOWORD(wparam)), static_cast<int>(static_cast<short>(HIWORD(wparam)))), 0)) \
 
 // Keep the above line blank to allow a backslash on the last line of the MSG_HANDLERS macro
 

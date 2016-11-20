@@ -6,7 +6,7 @@
 class order_view : public window_base<order_view> {
 public:
     SIZE min_size() const {
-        return { 10 * font_width_, 2*y_spacing+font_height_ };
+        return { 10 * font_width_, item_height_ + scroll_bar_height_ };
     }
 
     void set_module(const module& mod) {
@@ -24,10 +24,13 @@ private:
     static const wchar_t* class_name() { return L"order_view"; }
     static constexpr int font_height_ = 14;
     static constexpr int y_spacing = font_height_/2;
+    static constexpr int item_height_ = 2*y_spacing+font_height_;
+    static constexpr int scroll_bar_height_ = 10;
     font_ptr        font_;
     int             font_width_;
     const module*   mod_ = nullptr;
     int             selected_ = -1;
+    HWND            scrollbar_;
 
     explicit order_view() {
     }
@@ -42,16 +45,21 @@ private:
     }
 
     bool on_create() {
+        SetWindowLong(hwnd(), GWL_STYLE, GetWindowLong(hwnd(), GWL_STYLE) | WS_CLIPCHILDREN);
+
         font_ = create_default_tt_font(font_height_);
         window_dc dc{hwnd()};
         auto old_font = select(dc.get(), font_);
         TEXTMETRIC tm;
         GetTextMetrics(dc.get(), &tm);
         font_width_ = tm.tmAveCharWidth;
-        return true;
-    }
 
-    void on_destroy() {
+        // Show as needed by scroll_to
+        scrollbar_ = CreateWindow(L"SCROLLBAR", L"", WS_CHILD|SBS_HORZ, 0, 0, 100, scroll_bar_height_, hwnd(), nullptr, nullptr, nullptr);
+        if (!scrollbar_) {
+            fatal_error(L"CreateWindow(SCROLLBAR)");
+        }
+        return true;
     }
 
     int x_spacing() const {
@@ -70,17 +78,72 @@ private:
 
     RECT item_rect(int pos) const {
         const int x = position_to_x(pos); 
-        return { x, 0, x + item_width(), min_size().cy };
+        return { x, 0, x + item_width(), item_height_ };
     }
 
-    void paint(HDC hdc, const RECT& /*paint_rect*/) {
+    int items_per_page_ = 0;
+    int scroll_origin_ = 0;
+
+    void scroll_to(int pos) {
+        const int num_items = mod_ ? static_cast<int>(mod_->order.size()) : 1;
+    
+        pos = std::max(0, std::min<int>(pos, num_items - items_per_page_));
+        ScrollWindowEx(hwnd(), (scroll_origin_ - pos) * item_width(), 0,  NULL, NULL, NULL, NULL, SW_ERASE | SW_INVALIDATE);
+        scroll_origin_ = pos;
+
+        if (num_items <= items_per_page_) {
+            assert(scroll_origin_ == 0);
+            ShowWindow(scrollbar_, SW_HIDE);
+            return;
+        }
+
+        SCROLLINFO si;
+        si.cbSize = sizeof(si);
+        si.fMask = SIF_PAGE | SIF_POS | SIF_RANGE;
+        si.nPage = items_per_page_;
+        si.nMin = 0;
+        si.nMax = num_items - 1;
+        si.nPos = scroll_origin_;
+        SetScrollInfo(scrollbar_, SB_CTL, &si, TRUE);
+        ShowWindow(scrollbar_, SW_SHOW);
+    }
+
+    void scroll_delta(int delta) {
+        scroll_to(scroll_origin_ + delta);
+    }
+
+    void on_size(UINT, const int cx, const int /*cy*/) {
+        if (!cx) return;
+        SetWindowPos(scrollbar_, nullptr, 0, item_height_, cx, scroll_bar_height_, SWP_NOZORDER | SWP_NOACTIVATE);
+        items_per_page_ = std::max(1, cx / item_width());
+        scroll_delta(0);
+    }
+
+    void on_hscroll(unsigned code, int pos) {
+        switch (code) {
+        case SB_LINEUP:         scroll_delta(-1); break;
+        case SB_LINEDOWN:       scroll_delta(+1); break;
+        case SB_PAGEUP:         scroll_delta(-items_per_page_); break;
+        case SB_PAGEDOWN:       scroll_delta(+items_per_page_); break;
+        case SB_THUMBPOSITION:  scroll_to(pos); break;
+        case SB_THUMBTRACK:     scroll_to(pos); break;
+        case SB_TOP:            scroll_to(0); break;
+        case SB_BOTTOM:         scroll_to(MAXLONG); break;
+        }
+    }
+
+    void paint(HDC hdc, const RECT& paint_rect) {
         if (!mod_) return;
 
         SetBkColor(hdc, default_background_color);
         SetTextColor(hdc, default_text_color);
         auto old_font = select(hdc, font_);
 
-        for (int i = 0; i < static_cast<int>(mod_->order.size()); ++i) {
+        const int iwidth = item_width();
+        int imin = std::max<int>(paint_rect.left / iwidth, 0);
+        int imax = std::min<int>((paint_rect.right + iwidth - 1) / iwidth, static_cast<int>(mod_->order.size()));
+
+        for (int i = imin; i < imax; ++i) {
             const auto text = std::to_wstring(mod_->order[i]);
             RECT text_rect = item_rect(i);
             DrawText(hdc, text.c_str(), static_cast<int>(text.length()), &text_rect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
@@ -89,7 +152,7 @@ private:
         //
         // Selection
         //
-        {
+        if (selected_ >= imin && selected_ <= imax) {
             pen_ptr dotted_pen{CreatePen(PS_DOT, 1, default_text_color)};
             auto old_pen = select(hdc, dotted_pen);
             auto old_brush = select(hdc, GetStockBrush(HOLLOW_BRUSH));
@@ -105,7 +168,14 @@ private:
         PAINTSTRUCT ps;
         if (BeginPaint(hwnd(), &ps)) {
             if (!IsRectEmpty(&ps.rcPaint)) {
+                POINT ptOrgPrev;
+                const int xscroll = scroll_origin_ * item_width();
+                OffsetRect(&ps.rcPaint, xscroll, 0);
+                GetWindowOrgEx(ps.hdc, &ptOrgPrev);
+                SetWindowOrgEx(ps.hdc, ptOrgPrev.x + xscroll, ptOrgPrev.y, NULL);
                 paint(ps.hdc, ps.rcPaint);
+                SetWindowOrgEx(ps.hdc, ptOrgPrev.x, ptOrgPrev.y, NULL);
+                
             }
             EndPaint(hwnd(), &ps);
         }
