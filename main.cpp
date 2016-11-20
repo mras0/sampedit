@@ -104,6 +104,9 @@ public:
             channels_.emplace_back(*this);
         }
         mixer_.at_next_tick([this] {
+            set_speed(mod_.initial_speed);
+            set_tempo(mod_.initial_tempo);
+            tick_ = mod_.initial_speed+1;
             for (auto& ch : channels_) {
                 mixer_.add_voice(ch.get_voice());
             }
@@ -157,7 +160,7 @@ private:
 
         void process_note(const module_note& note) {
             if (note.instrument) { 
-                assert(note.instrument >= 1 && note.instrument <= 32);
+                assert(note.instrument >= 1 && note.instrument <= player_.mod_.instruments.size());
                 sample_ = note.instrument;
                 volume(instrument().volume);
             }
@@ -170,9 +173,10 @@ private:
                     process_s3m_note(note);
                 }
             }
-            if (note.volume) {
+            if (note.volume != no_volume_byte) {
                 assert(player_.mod_.type == module_type::s3m);
-                process_s3m_volume(note.volume);
+                assert(note.volume >= 0 && note.volume <= max_volume);
+                volume(note.volume);
             }
         }
 
@@ -196,6 +200,7 @@ private:
         int             vib_depth_ = 0;
         int             vib_speed_ = 0;
         int             vib_pos_   = 0;
+        int             last_vol_slide_ = 0;
         int             sample_offset_ = 0;
 
         int volume() const { return volume_; }
@@ -207,7 +212,15 @@ private:
         }
 
         void set_voice_period(int period) {
-            mix_chan_.freq(amiga_period_to_freq(period));
+            assert(sample_);
+            auto& s = player_.mod_.samples[sample_-1];
+            const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
+            if (player_.mod_.type == module_type::mod) {
+                mix_chan_.freq(amiga_period_to_freq(adjusted_period));
+            } else {
+                assert(player_.mod_.type == module_type::s3m);
+                mix_chan_.freq(s3m_period_to_freq(adjusted_period));
+            }
         }
 
         void set_period(int period) {
@@ -232,6 +245,23 @@ private:
             } else if (y > 0) {
                 do_volume_slide(-y);
             }
+        }
+
+        void do_s3m_volume_slide(int tick, int xy) {
+            if (xy) last_vol_slide_ = xy;
+            const int x = last_vol_slide_ >> 4;
+            const int y = last_vol_slide_ & 0xf;
+            if (x == 0xF) {
+                // Fine volume slide down
+                if (!tick) do_volume_slide(-y);
+            } else if (y == 0xF) {
+                // Fine volume slide up
+                if (!tick) do_volume_slide(+x);
+            } else {
+                if (tick) {
+                    do_volume_slide_xy(x, y);
+                }
+            }            
         }
 
         void do_porta_to_note() {
@@ -262,7 +292,7 @@ private:
 
 
         const module_instrument& instrument() const {
-            assert(sample_ >= 1 && sample_ <= 32);
+            assert(sample_ >= 1 && sample_ <= player_.mod_.instruments.size());
             return player_.mod_.instruments[sample_ - 1];
         }
 
@@ -277,23 +307,43 @@ private:
         
         void process_s3m_note(const module_note& note) {
             if (note.note == piano_key::OFF) {
-                wprintf(L"Ignoring key off\n");
+                volume(0);
                 return;
             }
-
+            assert(note.note != piano_key::NONE);
             const int period = player_.mod_.note_to_period(note.note);
             const char effchar = static_cast<char>((note.effect>>8)-1+'A');
             if (effchar == 'G') {
                 porta_target_period_ = period_;
             } else {
+                int offset = 0;
                 set_period(period);
-                trig(0);
+                if (effchar == 'O') {
+                    offset = (note.effect&0xff) << 8;
+                    if (offset) sample_offset_ = offset;
+                    else offset = sample_offset_;
+                }
+                trig(offset);
             }
         }
 
-        void process_s3m_volume(int vol) {
-            assert(vol > 0 && vol <= 64);
-            volume(vol);
+        // direction -1 => Up, 1 => Down
+        void do_s3m_porta(int tick, int direction, int xy) {
+            assert(direction == -1 || direction == +1);
+            if (xy) porta_speed_ = xy;
+            const int x = porta_speed_ >> 4;
+            const int y = porta_speed_ & 0xf;
+            const bool is_fine = x == 0xE || x == 0xF;
+            assert(!is_fine);
+            if (!tick) {
+                if (is_fine) {
+                    set_period(period_ + direction * (x == 0xF ? 4 : 1) * y);
+                }
+            } else {
+                if (!is_fine) {
+                    set_period(period_ + direction * 4 * porta_speed_);
+                }
+            }
         }
 
         void process_s3m_effect(int tick, int effect) {
@@ -308,6 +358,15 @@ private:
             case 'C': // Pattern break
                 process_mod_effect(tick, 0xD00 | xy);
                 break;
+            case 'D': // Volume slide 
+                do_s3m_volume_slide(tick, xy);
+                break;
+            case 'E': // Portamento down
+                do_s3m_porta(tick, +1, xy);
+                break;
+            case 'F': // Portamento up
+                do_s3m_porta(tick, -1, xy);
+                break;
             case 'H': // Vibrato
                 process_mod_effect(tick, 0x400 | xy);
                 break;
@@ -315,10 +374,12 @@ private:
                 process_mod_effect(tick, 0x000 | xy);
                 break;
             case 'G': // Gxy Porta to note
-                if (xy) porta_speed_ = xy;
+                if (xy) porta_speed_ = xy * 4;
                 if (tick) {
                     do_porta_to_note();
                 }
+                break;
+            case 'O': // Oxy Sample offset
                 break;
             case 'S':
                 switch(x) {
@@ -699,7 +760,7 @@ private:
         }
         if (mod_.type != module_type::mod) {
             assert(mod_.type == module_type::s3m);
-            if (note.volume) {
+            if (note.volume != no_volume_byte) {
                 assert(note.volume < 100);
                 ss << 'v' << std::setw(2) << std::dec << (int)note.volume << std::hex << ' ';
             } else {
@@ -734,8 +795,9 @@ int main(int argc, char* argv[])
             mod_player_.reset(new mod_player(load_module(argv[1]), m));
             auto& mod = mod_player_->mod();
             wprintf(L"Loaded '%S' - '%-20.20S' %d channels\n", argv[1], mod.name.c_str(), mod.num_channels);
-            for (const auto& s : mod.samples) {
-                wprintf(L"%-22.22S c5 rate: %d\n", s.name().c_str(), (int)(s.c5_rate()+0.5f));
+            for (size_t i = 0; i < mod.samples.size(); ++i) {
+                const auto& s = mod.samples[i];
+                wprintf(L"%2.2d: %-22.22S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(s.c5_rate()+0.5f));
             }
             samples = &mod.samples;
             grid.reset(new mod_grid{mod});

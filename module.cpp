@@ -18,8 +18,13 @@ const module_note* module::at(int ord, int row) const
 
 int module::note_to_period(piano_key note) const
 {
-    assert(type == module_type::mod || type == module_type::s3m);
-    return freq_to_amiga_period(piano_key_to_freq(note, piano_key::C_5, 8363));
+    const int amiga_period = freq_to_amiga_period(piano_key_to_freq(note, piano_key::C_5, amiga_c5_rate));
+    if (type == module_type::mod) {
+        return amiga_period;
+    } else {
+        assert(type == module_type::s3m);
+        return 4 * amiga_period;
+    }
 }
 
 std::vector<float> convert_sample_data(const std::vector<signed char>& d) {
@@ -150,14 +155,18 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
     const int sample_type     = read_le_u16(in); // 1 = signed, 2 = unsigned
     const auto signature      = read_le_u32(in);
     const int global_volume   = read_le_u8(in);
-    const int initial_speed   = read_be_u8(in);
-    const int initial_tempo   = read_le_u8(in);
+    mod.initial_speed         = read_be_u8(in);
+    mod.initial_tempo         = read_le_u8(in); // BPM
     const int master_volume   = read_le_u8(in); // 7-bit volume MSB set = stereo
     const int ultraclick_rem  = read_le_u8(in);
     const int default_pan     = read_le_u8(in);
     skip(in, 10); // Skip expansion (8 bytes) and special (2 bytes)
     assert((int)in.tellg() == 0x40);
-    assert(tracker_version == 0x1301 || tracker_version == 0x1310 || tracker_version == 0x1320); // 0x1301=ST3.01, 0x1310=ST3.10, 0x1320=ST3.20
+    wprintf(L"S3M tracker version: %4.4X\n", tracker_version);
+    assert(tracker_version == 0x1300 || tracker_version == 0x1301 || tracker_version == 0x1310 || tracker_version == 0x1320 || tracker_version == 0x3212); // 0x1301=ST3.01, 0x1310=ST3.10, 0x1320=ST3.20
+    if (tracker_version == 0x1300) {
+        wprintf(L"Ignoring compatiblity (vol slides process on tick 0 etc..) for tracker_version=%X\n", tracker_version);
+    }
     assert(sample_type == 2);
     assert(signature == make_sig("SCRM"));
 
@@ -188,6 +197,11 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
     for (int i = 0; i < num_instruments; ++i) {
         s3m_seek(in, instrument_pointers[i]);
         const uint8_t type = read_le_u8(in);
+        if (type == 0) {
+            mod.samples.emplace_back(std::vector<float>{}, 1.0f, "");
+            mod.instruments.push_back(module_instrument{0});
+            continue;
+        }
         assert(type == 1); // 1 = instrument
         char dos_filename[12];
         in.read(dos_filename, sizeof(dos_filename));
@@ -253,7 +267,7 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
                     } else {
                         wprintf(L".. .. ");
                     }
-                    if (rd.volume) {
+                    if (rd.volume != no_volume_byte) {
                         wprintf(L"v%2.2d ", rd.volume);
                         assert(rd.volume);
                     } else {
@@ -279,13 +293,13 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
             auto& rd = channel >= 0 && channel < num_channels ? row_data[channel] : ignored;
             if (b & 0x20) {
                 const uint8_t note = read_le_u8(in);
-                assert(note != 255);
-                rd.note       = note == 254 ? piano_key::OFF : piano_key::C_0 + 12 * (1 + note / 16) + note % 16;
+                rd.note       = note == 255 ? piano_key::NONE : note == 254 ? piano_key::OFF : piano_key::C_0 + 12 * (1 + note / 16) + note % 16;
                 rd.instrument = read_le_u8(in);
                 assert(rd.instrument <= num_instruments);
             }
             if (b & 0x40) {
                 rd.volume = read_le_u8(in);
+                assert(rd.volume != no_volume_byte);
             }
             if (b & 0x80) {
                 const uint8_t effect       = read_le_u8(in);
@@ -416,7 +430,7 @@ void load_mod(std::istream& in, const char* filename, module& mod)
                 n.instrument = (b[0]&0xf0) | (b[2]>>4);
                 const int period = ((b[0]&0x0f) << 8) | b[1];
                 n.effect = ((b[2] & 0x0f) << 8) | b[3];
-                n.volume = 0;
+                n.volume = no_volume_byte;
                 n.note   = period_to_piano_key(period);
                 //if (period) {
                 //    const float freq = piano_key_to_freq(n.note, piano_key::C_5, 8363);
@@ -437,7 +451,7 @@ void load_mod(std::istream& in, const char* filename, module& mod)
             in.read(reinterpret_cast<char*>(&data[0]), s.length);
         }
 
-        mod.samples.emplace_back(convert_sample_data(data), 8363.0f * note_difference_to_scale(s.finetune/8.0f), s.name);
+        mod.samples.emplace_back(convert_sample_data(data), amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name);
         if (s.loop_length > 2) {
             mod.samples.back().loop(s.loop_start, s.loop_length);
         }
