@@ -200,7 +200,8 @@ private:
         int             vib_depth_ = 0;
         int             vib_speed_ = 0;
         int             vib_pos_   = 0;
-        int             last_vol_slide_ = 0;
+        int             last_vol_slide_ = 0; // s3m only
+        int             last_retrig_ = 0;    // s3m only
         int             sample_offset_ = 0;
 
         int volume() const { return volume_; }
@@ -212,6 +213,7 @@ private:
         }
 
         void set_voice_period(int period) {
+            assert(period > 0);
             assert(sample_);
             auto& s = player_.mod_.samples[sample_-1];
             const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
@@ -224,7 +226,9 @@ private:
         }
 
         void set_period(int period) {
-            period_ = period;
+            static constexpr int s3m_min_period = 10;
+            static constexpr int s3m_max_period = 27392;
+            period_ = std::min(s3m_max_period, std::max(s3m_min_period, period));
             set_voice_period(period_);
         }
 
@@ -234,8 +238,12 @@ private:
             set_voice_period(res_per);
         }
 
+        void do_set_volume_checked(int vol) {
+            volume(std::max(0, std::min(max_volume, vol)));
+        }
+
         void do_volume_slide(int amount) {
-            volume(std::max(0, std::min(max_volume, volume() + amount)));
+            do_set_volume_checked(volume() + amount);
         }
 
         void do_volume_slide_xy(int x, int y) {
@@ -334,7 +342,6 @@ private:
             const int x = porta_speed_ >> 4;
             const int y = porta_speed_ & 0xf;
             const bool is_fine = x == 0xE || x == 0xF;
-            assert(!is_fine);
             if (!tick) {
                 if (is_fine) {
                     set_period(period_ + direction * (x == 0xF ? 4 : 1) * y);
@@ -373,6 +380,10 @@ private:
             case 'J': // Arpeggio
                 process_mod_effect(tick, 0x000 | xy);
                 break;
+            case 'K': // Kxy Vibrato + Volume Slide
+                process_mod_effect(tick, 0x400);
+                do_s3m_volume_slide(tick, xy);
+                break;
             case 'G': // Gxy Porta to note
                 if (xy) porta_speed_ = xy * 4;
                 if (tick) {
@@ -380,6 +391,35 @@ private:
                 }
                 break;
             case 'O': // Oxy Sample offset
+                break;
+            case 'Q': // Qxy (Retrig + Volume Slide)                
+                if (xy) {
+                    assert(y);
+                    last_retrig_ = xy;
+                }
+                if (tick && tick % (last_retrig_&0xf) == 0) {
+                    int new_vol = volume();
+                    switch (last_retrig_ >> 4) {
+                    case 0x0: break;
+                    case 0x1: new_vol -= 1; break;
+                    case 0x2: new_vol -= 2; break;
+                    case 0x3: new_vol -= 4; break;
+                    case 0x4: new_vol -= 8; break;
+                    case 0x5: new_vol -= 16; break;
+                    case 0x6: new_vol = new_vol*2/3; break;
+                    case 0x7: new_vol /= 2; break;
+                    case 0x8: break;
+                    case 0x9: new_vol += 1; break;
+                    case 0xA: new_vol += 2; break;
+                    case 0xB: new_vol += 4; break;
+                    case 0xC: new_vol += 8; break;
+                    case 0xD: new_vol += 16; break;
+                    case 0xE: new_vol = new_vol*3/2; break;
+                    case 0xF: new_vol *= 2; break;
+                    }
+                    do_set_volume_checked(new_vol);
+                    trig(0);
+                }
                 break;
             case 'S':
                 switch(x) {

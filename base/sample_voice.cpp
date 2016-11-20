@@ -17,6 +17,7 @@ public:
     }
 
     void freq(float f) {
+        assert(f > 0);
         incr_ = f / sample_rate_;
     }
 
