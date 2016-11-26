@@ -39,7 +39,7 @@ protected:
             wprintf(L"Warning: No sample. Ignoring trig offset %d\n", offset);
             return;
         }
-        auto& s = mod().samples[instrument_number()-1];
+        auto& s = instrument().samp;
         if (s.length()) {
             mix_chan().play(s, std::min(s.length(), offset));
         }
@@ -172,7 +172,7 @@ private:
             wprintf(L"Warning: No sample. Ignoring period %d\n", period);
             return;
         }
-        auto& s = mod().samples[instrument_number()-1];
+        auto& s = instrument().samp;
         const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
         voice_.freq(mod().period_to_freq(adjusted_period));
     }

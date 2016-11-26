@@ -132,15 +132,15 @@ int main(int argc, char* argv[])
             mod_player_.reset(new mod_player(load_module(argv[1]), m));
             auto& mod = mod_player_->mod();
             wprintf(L"Loaded '%S' - '%S' %d channels\n", argv[1], mod.name.c_str(), mod.num_channels);
-            for (size_t i = 0; i < mod.samples.size(); ++i) {
-                const auto& s = mod.samples[i];
+            for (size_t i = 0; i < mod.instruments.size(); ++i) {
+                const auto& s = mod.instruments[i].samp;
                 wprintf(L"%2.2d: %-28S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(s.c5_rate()+0.5f));
             }
             mod_ = &mod;
             grid.reset(new mod_grid{mod});
         } else {
             static module mod;
-            mod.samples.emplace_back(create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample");
+            mod.instruments.emplace_back(module_instrument{64, sample{create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample"}});
             mod.order.push_back(0);
             grid.reset(new test_grid{});
             mod_ = &mod;
@@ -159,12 +159,13 @@ int main(int argc, char* argv[])
                 return;
             }
             const int idx = main_wnd.current_sample_index();
-            if (idx < 0 || idx >= mod_->samples.size()) return;
-            const auto freq = piano_key_to_freq(key, piano_key::C_5, mod_->samples[idx].c5_rate());
+            if (idx < 0 || idx >= mod_->instruments.size()) return;
+            auto& samp = mod_->instruments[idx].samp;
+            const auto freq = piano_key_to_freq(key, piano_key::C_5, samp.c5_rate());
             wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
             m.at_next_tick([&, idx, freq] {
                 keyboard_voice.freq(freq);
-                keyboard_voice.play(mod_->samples[idx], 0); 
+                keyboard_voice.play(samp, 0); 
             });
         });
         main_wnd.on_start_stop([&]() {

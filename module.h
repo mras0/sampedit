@@ -12,7 +12,8 @@ constexpr float amiga_clock_rate    = 7159090.5f;
 constexpr float amiga_c5_rate       = amiga_clock_rate / (2 * 428);
 
 struct module_instrument {
-    int volume;
+    int    volume;
+    sample samp;
 };
 
 struct module_note {
@@ -38,7 +39,6 @@ struct module {
     std::vector<uint8_t>                   order;
     int                                    num_channels;
     std::vector<std::vector<module_note>>  patterns;
-    std::vector<sample>                    samples;
 
     struct {
         std::vector<uint8_t> channel_panning;

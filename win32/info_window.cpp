@@ -42,14 +42,12 @@ private:
         wss << mod_->num_channels << " channel " << module_type_name[static_cast<int>(mod_->type)] << " module name: " << mod_->name.c_str() << ", initial speed " << mod_->initial_speed << ", initial tempo " << mod_->initial_tempo << "\n";
         wss << std::setfill(L'0') << std::uppercase;
         for (size_t i = 0; i < mod_->instruments.size(); ++i) {
+            const auto& inst = mod_->instruments[i];
             wss << "Instrument " << std::dec << std::setw(2) << (i+1);
-            wss << "\tVolume " << std::hex << std::setw(2) << mod_->instruments[i].volume << "\n";
-        }
-        wss << std::dec;
-        for (size_t i = 0; i < mod_->samples.size(); ++i) {
+            wss << "\tVolume " << std::hex << std::setw(2) << inst.volume << " \t";
+            wss << std::dec;
             constexpr int len_w = 8;
-            const auto& s = mod_->samples[i];
-            wss << "Sample " << std::setw(2) << i+1 << ": \t";
+            const auto& s = inst.samp;
             wss << "C5Rate " << std::setfill(L' ') << std::setw(5) << static_cast<int>(0.5+s.c5_rate()) << std::setfill(L'0');
             wss << " \tLength \t" << std::setw(len_w) << s.length() << " \t";
             wss << "Loop: \tStart = " << std::setw(len_w) << s.loop_start() << " \tLength = " << std::setw(len_w) << s.loop_length() << " \t";

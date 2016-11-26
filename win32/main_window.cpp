@@ -14,13 +14,13 @@ class sample_edit : public window_base<sample_edit> {
 public:
     ~sample_edit() = default;
 
-    void set_samples(const std::vector<sample>& s) {
-        samples_ = &s;
+    void set_module(const module& mod) {
+        module_ = &mod;
 
         ListBox_ResetContent(sample_list_wnd_);
-        for (size_t i = 0; i < s.size(); ++i) {
+        for (int i = 0; i < sample_max(); ++i) {
             std::wstringstream wss;
-            wss << std::setw(2) << std::setfill(L'0') << i+1 << ": " << s[i].name().c_str();
+            wss << std::setw(2) << std::setfill(L'0') << i+1 << ": " << get_sample(i).name().c_str();
             if (ListBox_AddString(sample_list_wnd_, wss.str().c_str()) == LB_ERR) {
                 fatal_error(L"ListBox_AddString");
             }
@@ -48,7 +48,7 @@ private:
 
     static const wchar_t* class_name() { return L"sample_edit"; }
 
-    const std::vector<sample>* samples_ = nullptr;
+    const module* module_ = nullptr;
 
     static constexpr int info_font_height = 12;
 
@@ -63,10 +63,20 @@ private:
 
     event<piano_key>           on_piano_key_pressed_;
 
+    int sample_max() const {
+        assert(module_);
+        return static_cast<int>(module_->instruments.size());
+    }
+
+    const sample& get_sample(int index) const {
+        assert(module_ && index >= 0 && index < sample_max());
+        return module_->instruments[index].samp;
+    }
+
     void select_sample(int index) {
         std::wostringstream wss;
-        if (samples_ && index >= 0 && index < static_cast<int>(samples_->size())) {
-            const auto& s = (*samples_)[index];
+        if (module_ && index >= 0 && index < sample_max()) {
+            const auto& s = get_sample(index);
             sample_wnd_.set_sample(&s);
             wss << std::setw(2) << index+1 << ": " << s.length() << " - \"" << s.name().c_str() << "\"\n";
             sample_index_ = index;
@@ -147,14 +157,14 @@ private:
         if (vk == VK_SPACE) {
             on_piano_key_pressed_(piano_key::OFF);
         } else if (vk == VK_UP) {
-            if (samples_) {
+            if (module_) {
                 assert(sample_index_ >= 0);
-                select_sample(sample_index_ ? sample_index_ - 1 : static_cast<int>(samples_->size()) - 1);
+                select_sample(sample_index_ ? sample_index_ - 1 : sample_max() - 1);
             }
         } else if (vk == VK_DOWN) {
-            if (samples_) {
+            if (module_) {
                 assert(sample_index_ >= 0);
-                select_sample((sample_index_ + 1) % samples_->size());
+                select_sample((sample_index_ + 1) % sample_max());
             }
         } else {
             piano_key key = key_to_note(vk);
@@ -170,7 +180,7 @@ public:
     ~main_window_impl() = default;
 
     void set_module(const module& mod) {
-        sample_edit_->set_samples(mod.samples);
+        sample_edit_->set_module(mod);
         pattern_edit_.set_module(mod);
         info_window_.set_module(mod);
     }
