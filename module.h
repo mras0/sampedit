@@ -7,26 +7,13 @@
 #include <base/sample.h>
 #include <base/note.h>
 
-constexpr float amiga_clock_rate = 7159090.5f;
-constexpr float amiga_c5_rate    = amiga_clock_rate / (2 * 428);
-
-constexpr float amiga_period_to_freq(int period) {
-    return amiga_clock_rate / (period * 2);
-}
-
-constexpr float s3m_period_to_freq(int period) {
-    return 14317056.0f / period;
-}
-
-constexpr int freq_to_amiga_period(float freq) {
-    return static_cast<int>(amiga_clock_rate / (2 * freq));
-}
+constexpr uint8_t no_volume_byte    = 0xFF;
+constexpr float amiga_clock_rate    = 7159090.5f;
+constexpr float amiga_c5_rate       = amiga_clock_rate / (2 * 428);
 
 struct module_instrument {
     int volume;
 };
-
-constexpr uint8_t no_volume_byte = 0xFF;
 
 struct module_note {
     piano_key  note        = piano_key::NONE;
@@ -60,6 +47,8 @@ struct module {
     static constexpr int rows_per_pattern = 64;
 
     int note_to_period(piano_key note) const;
+    int freq_to_period(float freq) const;
+    float period_to_freq(int period) const;
     const module_note* at(int order, int row) const;
     int channel_default_pan(int channel) const;
 };

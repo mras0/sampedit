@@ -8,6 +8,15 @@
 #include <assert.h>
 
 constexpr uint8_t default_pan_value = 0x30;
+constexpr float s3m_clock_rate      = 14317056.0f;
+
+constexpr float amiga_period_to_freq(int period) {
+    return amiga_clock_rate / (period * 2);
+}
+
+constexpr int freq_to_amiga_period(float freq) {
+    return static_cast<int>(0.5 + amiga_clock_rate / (2 * freq));
+}
 
 const module_note* module::at(int ord, int row) const
 {
@@ -27,6 +36,24 @@ int module::note_to_period(piano_key note) const
     } else {
         assert(type == module_type::s3m);
         return 4 * amiga_period;
+    }
+}
+
+int module::freq_to_period(float freq) const {
+    if (type == module_type::mod) {
+        return freq_to_amiga_period(freq);
+    } else {
+        assert(type == module_type::s3m);
+        return static_cast<int>(0.5+s3m_clock_rate / freq);
+    }
+}
+
+float module::period_to_freq(int period) const {
+    if (type == module_type::mod) {
+        return amiga_period_to_freq(period);
+    } else {
+        assert(type == module_type::s3m);
+        return s3m_clock_rate / period;
     }
 }
 

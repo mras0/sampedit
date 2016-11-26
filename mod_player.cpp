@@ -9,11 +9,12 @@ public:
     virtual void process_effect(int tick, int effect) = 0;
 
 protected:
-    mod_player::impl& player_;
-
-    explicit channel_base(mod_player::impl& player) : player_(player) {
+    explicit channel_base(mod_player::impl& player, sample_voice& voice) : player_(player), voice_(voice) {
     }
 
+    //
+    // Global stuff
+    //
     const module& mod() const;
     module_position current_position() const;
     void do_set_speed(int speed);
@@ -22,6 +23,71 @@ protected:
     void do_pattern_jump(int order);
     void do_pattern_delay(int delay_notes);
     void do_pattern_loop(int x);
+
+    //
+    // Misc
+    //
+    sample_voice& mix_chan() { return voice_; }
+
+    //
+    // Volume
+    //
+    int volume() const { return volume_; }
+    void volume(int vol) {
+        volume_ = std::max(0, std::min(mod_player::max_volume, vol));
+        voice_.volume(static_cast<float>(volume_) / mod_player::max_volume);
+    }
+
+    void do_volume_slide(int amount) {
+        volume(volume() + amount);
+    }
+
+    void do_volume_slide(int x, int y) {
+        if (x && y) {
+        } else if (x > 0) {
+            do_volume_slide(+x);
+        } else if (y > 0) {
+            do_volume_slide(-y);
+        }
+    }
+
+    //
+    // Instrument
+    //
+    void instrument_number(int inst) {
+        assert(inst >= 1 && inst <= mod().instruments.size());
+        instrument_ = inst;
+        volume(instrument().volume);
+    }
+
+    int instrument_number() const {
+        return instrument_;
+    }
+
+    const module_instrument& instrument() const {
+        assert(instrument_ >= 1 && instrument_ <= mod().instruments.size());
+        return mod().instruments[instrument_ - 1];
+    }
+
+    //
+    // Period
+    //
+    void set_voice_period(int period) {
+        assert(period > 0);
+        if (!instrument_number()) {
+            wprintf(L"Warning: No sample. Ignoring period %d\n", period);
+            return;
+        }
+        auto& s = mod().samples[instrument_number()-1];
+        const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
+        voice_.freq(mod().period_to_freq(adjusted_period));
+    }
+
+private:
+    mod_player::impl&   player_;
+    sample_voice&       voice_;
+    int                 volume_     = 0;
+    int                 instrument_ = 0;
 };
 
 std::unique_ptr<channel_base> make_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan);
@@ -309,15 +375,13 @@ void channel_base::do_pattern_loop(int x) {
 //
 class channel : public channel_base {
 public:
-    explicit channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player), mix_chan_(voice) {
-        mix_chan_.pan(default_pan / 255.0f);
+    explicit channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice) {
+        mix_chan().pan(default_pan / 255.0f);
     }
 
     virtual void process_note(const module_note& note) override {
-        if (note.instrument) { 
-            assert(note.instrument >= 1 && note.instrument <= mod().instruments.size());
-            sample_ = note.instrument;
-            volume(instrument().volume);
+        if (note.instrument) {
+            instrument_number(note.instrument);
         }
         if (note.note != piano_key::NONE) {
             if (mod().type == module_type::mod) {
@@ -345,9 +409,6 @@ public:
 
 
 private:
-    sample_voice&       mix_chan_;
-    int                 sample_ = 0;
-    int                 volume_ = 0;
     int                 period_ = 0;
     int                 porta_target_period_ = 0;
     int                 porta_speed_ = 0;
@@ -358,30 +419,6 @@ private:
     int                 last_retrig_ = 0;    // s3m only
     int                 sample_offset_ = 0;
 
-    int volume() const { return volume_; }
-
-    void volume(int vol) {
-        assert(vol >= 0 && vol <= mod_player::max_volume);
-        volume_ = vol;
-        mix_chan_.volume(static_cast<float>(vol) / mod_player::max_volume);
-    }
-
-    void set_voice_period(int period) {
-        assert(period > 0);
-        if (!sample_) {
-            wprintf(L"Warning: No sample. Ignoring period %d\n", period);
-            return;
-        }
-        auto& s = mod().samples[sample_-1];
-        const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
-        if (mod().type == module_type::mod) {
-            mix_chan_.freq(amiga_period_to_freq(adjusted_period));
-        } else {
-            assert(mod().type == module_type::s3m);
-            mix_chan_.freq(s3m_period_to_freq(adjusted_period));
-        }
-    }
-
     void set_period(int period) {
         static constexpr int s3m_min_period = 10;
         static constexpr int s3m_max_period = 27392;
@@ -390,26 +427,9 @@ private:
     }
 
     void do_arpeggio(int amount) {
-        const int res_per = freq_to_amiga_period(amiga_period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
+        const int res_per = mod().freq_to_period(mod().period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
         //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
         set_voice_period(res_per);
-    }
-
-    void do_set_volume_checked(int vol) {
-        volume(std::max(0, std::min(mod_player::max_volume, vol)));
-    }
-
-    void do_volume_slide(int amount) {
-        do_set_volume_checked(volume() + amount);
-    }
-
-    void do_volume_slide_xy(int x, int y) {
-        if (x && y) {
-        } else if (x > 0) {
-            do_volume_slide(+x);
-        } else if (y > 0) {
-            do_volume_slide(-y);
-        }
     }
 
     void do_s3m_volume_slide(int tick, int xy) {
@@ -424,7 +444,7 @@ private:
             if (!tick) do_volume_slide(+x);
         } else {
             if (tick) {
-                do_volume_slide_xy(x, y);
+                do_volume_slide(x, y);
             }
         }            
     }
@@ -456,20 +476,15 @@ private:
     }
 
 
-    const module_instrument& instrument() const {
-        assert(sample_ >= 1 && sample_ <= mod().instruments.size());
-        return mod().instruments[sample_ - 1];
-    }
-
     void trig(int offset) {
         vib_pos_ = 0;
-        if (!sample_) {
+        if (!instrument_number()) {
             wprintf(L"Warning: No sample. Ignoring trig offset %d\n", offset);
             return;
         }
-        auto& s = mod().samples[sample_-1];
+        auto& s = mod().samples[instrument_number()-1];
         if (s.length()) {
-            mix_chan_.play(s, std::min(s.length(), offset));
+            mix_chan().play(s, std::min(s.length(), offset));
         }
     }
 
@@ -582,7 +597,7 @@ private:
                 case 0xE: new_vol = new_vol*3/2; break;
                 case 0xF: new_vol *= 2; break;
                 }
-                do_set_volume_checked(new_vol);
+                volume(new_vol);
                 trig(0);
             }
             break;
@@ -590,7 +605,7 @@ private:
             switch(x) {
             case 0x8: // Pan position
                 if (!tick) {
-                    mix_chan_.pan((y<<4) / 255.0f);
+                    mix_chan().pan((y<<4) / 255.0f);
                 }
                 break;
             case 0xB: // Pattern Loop
@@ -677,13 +692,13 @@ private:
         case 0x5: // 5xy Porta + Voume slide (5xy = 300 + Axy)
             if (tick) {
                 do_porta_to_note();
-                do_volume_slide_xy(x, y);
+                do_volume_slide(x, y);
             }
             return;
         case 0x6: // 6xy Vibrato + Volume slide (6xy = 400 + Axy)
             if (tick) {
                 do_vibrato();
-                do_volume_slide_xy(x, y);
+                do_volume_slide(x, y);
             }
             return;
         case 0x8: // 8xy
@@ -692,7 +707,7 @@ private:
             return;
         case 0xA: // Axy Volume slide
             if (tick) {
-                do_volume_slide_xy(x, y);
+                do_volume_slide(x, y);
             }
             return;
         case 0xB: // Bxy Pattern jump
