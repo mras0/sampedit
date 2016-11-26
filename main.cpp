@@ -44,6 +44,13 @@ public:
         voices_.push_back(&v);
     }
 
+    void remove_voice(voice& v) {
+        at_next_tick_.assert_in_queue_thread();
+        auto it = std::find(voices_.begin(), voices_.end(), &v);
+        assert(it != voices_.end());
+        voices_.erase(it);
+    }
+
     void ticks_per_second(int tps) {
         at_next_tick_.assert_in_queue_thread();
         ticks_per_second_ = tps;
@@ -112,6 +119,15 @@ public:
                 mixer_.add_voice(ch.get_voice());
             }
             mixer_.global_volume(1.0f/mod_.num_channels);
+        });
+    }
+
+    ~mod_player() {
+        mixer_.at_next_tick([this] {
+            for (auto& ch : channels_) {
+                mixer_.remove_voice(ch.get_voice());
+            }
+            mixer_.global_volume(1.0f);
         });
     }
 
