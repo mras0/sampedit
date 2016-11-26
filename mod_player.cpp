@@ -461,9 +461,10 @@ void channel_base::do_pattern_loop(int x) {
 //
 // mod_channel
 //
-class channel : public channel_base {
+class mod_channel : public channel_base {
 public:
-    explicit channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice, default_pan) {
+    explicit mod_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice, default_pan) {
+        assert(mod().type == module_type::mod);
     }
 
     virtual void process_note(const module_note& note) override {
@@ -471,219 +472,29 @@ public:
             instrument_number(note.instrument);
         }
         if (note.note != piano_key::NONE) {
-            if (mod().type == module_type::mod) {
-                assert(note.note != piano_key::OFF);
-                process_mod_note(note);
+            assert(note.note != piano_key::OFF);
+            const int period = mod().note_to_period(note.note);
+            const auto effect = note.effect>>8;
+            if (effect == 3 || effect == 5) {
+                set_porta_target(period);
             } else {
-                assert(mod().type == module_type::s3m);
-                process_s3m_note(note);
+                set_period(period);
+
+                if (note.effect>>4 != 0xED) {
+                    int offset = 0;
+                    if (effect == 9) {
+                        offset = (note.effect & 0xff) << 8;
+                        if (offset) sample_offset_ = offset;
+                        else offset = sample_offset_;
+                    }
+                    trig(offset);
+                }
             }
         }
-        if (note.volume != no_volume_byte) {
-            assert(mod().type == module_type::s3m);
-            assert(note.volume >= 0 && note.volume <= mod_player::max_volume);
-            volume(note.volume);
-        }
+        assert(note.volume == no_volume_byte);
     }
 
     virtual void process_effect(int tick, int effect) override {
-        if (mod().type == module_type::mod) {
-            process_mod_effect(tick, effect);
-        } else {
-            process_s3m_effect(tick, effect);
-        }
-    }
-
-
-private:
-    int                 last_vol_slide_ = 0; // s3m only
-    int                 last_retrig_ = 0;    // s3m only
-    int                 sample_offset_ = 0;
-
-    void do_s3m_volume_slide(int tick, int xy) {
-        if (xy) last_vol_slide_ = xy;
-        const int x = last_vol_slide_ >> 4;
-        const int y = last_vol_slide_ & 0xf;
-        if (x == 0xF) {
-            // Fine volume slide down
-            if (!tick) do_volume_slide(-y);
-        } else if (y == 0xF) {
-            // Fine volume slide up
-            if (!tick) do_volume_slide(+x);
-        } else {
-            if (tick) {
-                do_volume_slide(x, y);
-            }
-        }            
-    }
-
-    void process_s3m_note(const module_note& note) {
-        if (note.note == piano_key::OFF) {
-            volume(0);
-            return;
-        }
-        assert(note.note != piano_key::NONE);
-        const int period = mod().note_to_period(note.note);
-        const char effchar = static_cast<char>((note.effect>>8)-1+'A');
-        if (effchar == 'G') {
-            set_porta_target(period);
-        } else {
-            int offset = 0;
-            set_period(period);
-            if (effchar != 'S' || ((note.effect>>4)&0xf) != 0xD) { // SDy Note delay
-                if (effchar == 'O') {
-                    offset = (note.effect&0xff) << 8;
-                    if (offset) sample_offset_ = offset;
-                    else offset = sample_offset_;
-                }
-            }
-            trig(offset);
-        }
-    }
-
-    // direction -1 => Up, 1 => Down
-    void do_s3m_porta(int tick, int direction, int xy) {
-        assert(direction == -1 || direction == +1);
-        if (xy) porta_speed(xy);
-        const int x = porta_speed() >> 4;
-        const int y = porta_speed() & 0xf;
-        const bool is_fine = x == 0xE || x == 0xF;
-        if (!tick) {
-            if (is_fine) {
-                do_porta(direction * (x == 0xF ? 4 : 1) * y);
-            }
-        } else {
-            if (!is_fine) {
-                do_porta(direction * 4 * porta_speed());
-            }
-        }
-    }
-
-    void process_s3m_effect(int tick, int effect) {
-        const char effchar = static_cast<char>((effect>>8)-1+'A');
-        const int xy = effect&0xff;
-        const int x = xy >> 4;
-        const int y = xy & 0xf;
-        switch (effchar) {
-        case 'A': // Set speed
-            do_set_speed(xy);
-            break;
-        case 'B': // Pattern jump
-            if (!tick) {
-                wprintf(L"Pattern jump! B%02X\n", xy);
-                do_pattern_jump(xy);
-            }
-        case 'C': // Pattern break
-            if (!tick) {
-                do_pattern_break(x*10 + y);
-            }
-            break;
-        case 'D': // Volume slide 
-            do_s3m_volume_slide(tick, xy);
-            break;
-        case 'E': // Portamento down
-            do_s3m_porta(tick, +1, xy);
-            break;
-        case 'F': // Portamento up
-            do_s3m_porta(tick, -1, xy);
-            break;
-        case 'H': // Vibrato
-            do_vibrato(tick, x, y);
-            break;
-        case 'J': // Arpeggio
-            do_arpeggio(tick, x, y);
-            break;
-        case 'K': // Kxy Vibrato + Volume Slide
-            do_vibrato(tick, 0, 0);
-            do_s3m_volume_slide(tick, xy);
-            break;
-        case 'G': // Gxy Porta to note
-            if (xy) porta_speed(xy * 4);
-            if (tick) {
-                do_porta_to_note();
-            }
-            break;
-        case 'O': // Oxy Sample offset
-            break;
-        case 'Q': // Qxy (Retrig + Volume Slide)                
-            if (xy) {
-                assert(y);
-                last_retrig_ = xy;
-            }
-            if (tick && tick % (last_retrig_&0xf) == 0) {
-                int new_vol = volume();
-                switch (last_retrig_ >> 4) {
-                case 0x0: break;
-                case 0x1: new_vol -= 1; break;
-                case 0x2: new_vol -= 2; break;
-                case 0x3: new_vol -= 4; break;
-                case 0x4: new_vol -= 8; break;
-                case 0x5: new_vol -= 16; break;
-                case 0x6: new_vol = new_vol*2/3; break;
-                case 0x7: new_vol /= 2; break;
-                case 0x8: break;
-                case 0x9: new_vol += 1; break;
-                case 0xA: new_vol += 2; break;
-                case 0xB: new_vol += 4; break;
-                case 0xC: new_vol += 8; break;
-                case 0xD: new_vol += 16; break;
-                case 0xE: new_vol = new_vol*3/2; break;
-                case 0xF: new_vol *= 2; break;
-                }
-                volume(new_vol);
-                trig(0);
-            }
-            break;
-        case 'S':
-            switch(x) {
-            case 0x8: // Pan position
-                if (!tick) {
-                    mix_chan().pan((y<<4) / 255.0f);
-                }
-                break;
-            case 0xB: // Pattern Loop
-                process_mod_effect(tick, 0xE60 | y);
-                break;
-            case 0xC: // Note cut
-                process_mod_effect(tick, 0xEC0 | y);
-                break;
-            case 0xD: // Note delay
-                process_mod_effect(tick, 0xED0 | y);
-                break;
-            default:
-                if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, effchar, xy);
-            }
-            break;
-        case 'T': // Txy Set tempo
-            assert(xy >= 0x20);
-            do_set_tempo(xy);
-            break;
-        default:
-            if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, effchar, xy);
-        }
-    }
-
-    void process_mod_note(const module_note& note) {
-        const int period = mod().note_to_period(note.note);
-        const auto effect = note.effect>>8;
-        if (effect == 3 || effect == 5) {
-            set_porta_target(period);
-        } else {
-            set_period(period);
-
-            if (note.effect>>4 != 0xED) {
-                int offset = 0;
-                if (effect == 9) {
-                    offset = (note.effect & 0xff) << 8;
-                    if (offset) sample_offset_ = offset;
-                    else offset = sample_offset_;
-                }
-                trig(offset);
-            }
-        }
-    }
-
-    void process_mod_effect(int tick, int effect) {
         assert(effect);
         const int xy = effect&0xff;
         const int x  = xy>>4;
@@ -810,8 +621,208 @@ private:
         }
         if (!tick) wprintf(L"Unhandled effect %03X\n", effect);
     }
+
+private:
+    int  sample_offset_ = 0;
+};
+
+//
+// s3m_channel
+//
+class s3m_channel : public channel_base {
+public:
+    explicit s3m_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice, default_pan) {
+        assert(mod().type == module_type::s3m);
+    }
+
+    virtual void process_note(const module_note& note) override {
+        if (note.instrument) {
+            instrument_number(note.instrument);
+        }
+        if (note.note != piano_key::NONE) {
+            if (note.note == piano_key::OFF) {
+                volume(0);
+                return;
+            }
+            const int period = mod().note_to_period(note.note);
+            const char effchar = static_cast<char>((note.effect>>8)-1+'A');
+            if (effchar == 'G') {
+                set_porta_target(period);
+            } else {
+                int offset = 0;
+                set_period(period);
+                if (effchar != 'S' || ((note.effect>>4)&0xf) != 0xD) { // SDy Note delay
+                    if (effchar == 'O') {
+                        offset = (note.effect&0xff) << 8;
+                        if (offset) sample_offset_ = offset;
+                        else offset = sample_offset_;
+                    }
+                }
+                trig(offset);
+            }
+        }
+        if (note.volume != no_volume_byte) {
+            assert(note.volume >= 0 && note.volume <= mod_player::max_volume);
+            volume(note.volume);
+        }
+    }
+
+    virtual void process_effect(int tick, int effect) override {
+        const char effchar = static_cast<char>((effect>>8)-1+'A');
+        const int xy = effect&0xff;
+        const int x = xy >> 4;
+        const int y = xy & 0xf;
+        switch (effchar) {
+        case 'A': // Set speed
+            do_set_speed(xy);
+            break;
+        case 'B': // Pattern jump
+            if (!tick) {
+                wprintf(L"Pattern jump! B%02X\n", xy);
+                do_pattern_jump(xy);
+            }
+        case 'C': // Pattern break
+            if (!tick) {
+                do_pattern_break(x*10 + y);
+            }
+            break;
+        case 'D': // Volume slide 
+            do_s3m_volume_slide(tick, xy);
+            break;
+        case 'E': // Portamento down
+            do_s3m_porta(tick, +1, xy);
+            break;
+        case 'F': // Portamento up
+            do_s3m_porta(tick, -1, xy);
+            break;
+        case 'H': // Vibrato
+            do_vibrato(tick, x, y);
+            break;
+        case 'J': // Arpeggio
+            do_arpeggio(tick, x, y);
+            break;
+        case 'K': // Kxy Vibrato + Volume Slide
+            do_vibrato(tick, 0, 0);
+            do_s3m_volume_slide(tick, xy);
+            break;
+        case 'G': // Gxy Porta to note
+            if (xy) porta_speed(xy * 4);
+            if (tick) {
+                do_porta_to_note();
+            }
+            break;
+        case 'O': // Oxy Sample offset
+            break;
+        case 'Q': // Qxy (Retrig + Volume Slide)                
+            if (xy) {
+                assert(y);
+                last_retrig_ = xy;
+            }
+            if (tick && tick % (last_retrig_&0xf) == 0) {
+                int new_vol = volume();
+                switch (last_retrig_ >> 4) {
+                case 0x0: break;
+                case 0x1: new_vol -= 1; break;
+                case 0x2: new_vol -= 2; break;
+                case 0x3: new_vol -= 4; break;
+                case 0x4: new_vol -= 8; break;
+                case 0x5: new_vol -= 16; break;
+                case 0x6: new_vol = new_vol*2/3; break;
+                case 0x7: new_vol /= 2; break;
+                case 0x8: break;
+                case 0x9: new_vol += 1; break;
+                case 0xA: new_vol += 2; break;
+                case 0xB: new_vol += 4; break;
+                case 0xC: new_vol += 8; break;
+                case 0xD: new_vol += 16; break;
+                case 0xE: new_vol = new_vol*3/2; break;
+                case 0xF: new_vol *= 2; break;
+                }
+                volume(new_vol);
+                trig(0);
+            }
+            break;
+        case 'S':
+            switch(x) {
+            case 0x8: // Pan position
+                if (!tick) {
+                    mix_chan().pan((y<<4) / 255.0f);
+                }
+                break;
+            case 0xB: // Pattern Loop
+                if (!tick) {
+                    do_pattern_loop(y);
+                }
+                break;
+            case 0xC: // Note cut
+                if (tick == y) {
+                    volume(0);
+                }
+                break;
+            case 0xD: // Note delay
+                if (tick == y) {
+                    trig(0);
+                }
+                break;
+            default:
+                if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, effchar, xy);
+            }
+            break;
+        case 'T': // Txy Set tempo
+            assert(xy >= 0x20);
+            do_set_tempo(xy);
+            break;
+        default:
+            if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, effchar, xy);
+        }
+    }
+
+private:
+    int  sample_offset_ = 0;
+    int  last_vol_slide_ = 0;
+    int  last_retrig_ = 0;
+
+    void do_s3m_volume_slide(int tick, int xy) {
+        if (xy) last_vol_slide_ = xy;
+        const int x = last_vol_slide_ >> 4;
+        const int y = last_vol_slide_ & 0xf;
+        if (x == 0xF) {
+            // Fine volume slide down
+            if (!tick) do_volume_slide(-y);
+        } else if (y == 0xF) {
+            // Fine volume slide up
+            if (!tick) do_volume_slide(+x);
+        } else {
+            if (tick) {
+                do_volume_slide(x, y);
+            }
+        }            
+    }
+
+    // direction -1 => Up, 1 => Down
+    void do_s3m_porta(int tick, int direction, int xy) {
+        assert(direction == -1 || direction == +1);
+        if (xy) porta_speed(xy);
+        const int x = porta_speed() >> 4;
+        const int y = porta_speed() & 0xf;
+        const bool is_fine = x == 0xE || x == 0xF;
+        if (!tick) {
+            if (is_fine) {
+                do_porta(direction * (x == 0xF ? 4 : 1) * y);
+            }
+        } else {
+            if (!is_fine) {
+                do_porta(direction * 4 * porta_speed());
+            }
+        }
+    }
 };
 
 std::unique_ptr<channel_base> make_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) {
-    return std::make_unique<channel>(player, voice, default_pan);
+    switch (player.mod().type) {
+    case module_type::mod: return std::make_unique<mod_channel>(player, voice, default_pan);
+    case module_type::s3m: return std::make_unique<s3m_channel>(player, voice, default_pan);
+    }
+    assert(false);
+    throw std::runtime_error("Unknown module type");
 }
