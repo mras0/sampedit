@@ -6,15 +6,18 @@ class mod_player::impl {
 public:
     explicit impl(const module& mod, mixer& m) : mod_(mod), mixer_(m) {
         for (int i = 0; i < mod_.num_channels; ++i) {
-            channels_.emplace_back(*this, mod.channel_default_pan(i));
+            voices_.emplace_back(mixer_.sample_rate());
+        }
+        for (int i = 0; i < mod_.num_channels; ++i) {
+            channels_.emplace_back(*this, voices_[i], mod.channel_default_pan(i));
             wprintf(L"%2d: Pan %d\n", i+1,mod.channel_default_pan(i));
         }
         mixer_.at_next_tick([this] {
             set_speed(mod_.initial_speed);
             set_tempo(mod_.initial_tempo);
             tick_ = mod_.initial_speed+1;
-            for (auto& ch : channels_) {
-                mixer_.add_voice(ch.get_voice());
+            for (auto& v : voices_) {
+                mixer_.add_voice(v);
             }
             mixer_.global_volume(1.0f/mod_.num_channels);
         });
@@ -22,8 +25,8 @@ public:
 
     ~impl() {
         mixer_.at_next_tick([this] {
-            for (auto& ch : channels_) {
-                mixer_.remove_voice(ch.get_voice());
+            for (auto& v : voices_) {
+                mixer_.remove_voice(v);
             }
             mixer_.global_volume(1.0f);
         });
@@ -59,18 +62,11 @@ public:
         on_position_changed_.subscribe(cb);
     }
 
-    static constexpr int max_rows     = 64;
-    static constexpr int max_volume   = 64;
-
 private:
     class channel {
     public:
-        explicit channel(mod_player::impl& player, uint8_t default_pan) : player_(player), mix_chan_(player.mixer_.sample_rate()) {
+        explicit channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : player_(player), mix_chan_(voice) {
             mix_chan_.pan(default_pan / 255.0f);
-        }
-
-        sample_voice& get_voice() {
-            return mix_chan_;
         }
 
         void process_note(const module_note& note) {
@@ -106,7 +102,7 @@ private:
 
     private:
         mod_player::impl&   player_;
-        sample_voice        mix_chan_;
+        sample_voice&       mix_chan_;
         int                 sample_ = 0;
         int                 volume_ = 0;
         int                 period_ = 0;
@@ -537,21 +533,22 @@ private:
 
     };
 
-    module                  mod_;
-    mixer&                  mixer_;
-    bool                    playing_ = false;
-    int                     speed_ = 6;     // Number of ticks per row 1..127
-    int                     order_ = 0;     // Position in order table 0..song length-1
-    int                     row_ = -1;      // Current row in pattern
-    int                     tick_ = 6;      // Current tick 0..speed
-    int                     pattern_jump_ = -1;
-    int                     pattern_break_row_ = -1;
-    int                     pattern_delay_ = -1;
-    int                     pattern_loop_row_ = -1;
-    int                     pattern_loop_counter_ = -1;
-    bool                    pattern_loop_ = false;
-    event<module_position>  on_position_changed_;
-    std::vector<channel>    channels_;
+    module                      mod_;
+    mixer&                      mixer_;
+    bool                        playing_ = false;
+    int                         speed_ = 6;     // Number of ticks per row 1..127
+    int                         order_ = 0;     // Position in order table 0..song length-1
+    int                         row_ = -1;      // Current row in pattern
+    int                         tick_ = 6;      // Current tick 0..speed
+    int                         pattern_jump_ = -1;
+    int                         pattern_break_row_ = -1;
+    int                         pattern_delay_ = -1;
+    int                         pattern_loop_row_ = -1;
+    int                         pattern_loop_counter_ = -1;
+    bool                        pattern_loop_ = false;
+    event<module_position>      on_position_changed_;
+    std::vector<sample_voice>   voices_;
+    std::vector<channel>        channels_;
 
     void schedule() {
         mixer_.at_next_tick([this] { tick(); });
@@ -559,8 +556,8 @@ private:
 
     void set_playing(bool playing) {
         playing_ = playing;
-        for (auto& ch : channels_) {
-            ch.get_voice().paused(!playing_);
+        for (auto& v : voices_) {
+            v.paused(!playing_);
         }
         if (playing_) {
             schedule();
