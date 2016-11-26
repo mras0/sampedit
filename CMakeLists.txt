@@ -25,8 +25,10 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 add_executable(${PROJECT_NAME} main.cpp
     module.cpp module.h
+    xm.cpp xm.h
     mixer.cpp mixer.h
     mod_player.cpp mod_player.h
+    base/stream_util.h base/stream_util.cpp
     base/event.h
     base/job_queue.cpp base/job_queue.h
     base/sample.h

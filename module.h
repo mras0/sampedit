@@ -22,8 +22,8 @@ struct module_note {
     uint16_t   effect      = 0;
 };
 
-enum class module_type { mod, s3m };
-constexpr const char* const module_type_name[] = { "MOD", "S3M" };
+enum class module_type { mod, s3m, xm };
+constexpr const char* const module_type_name[] = { "MOD", "S3M", "XM" };
 
 struct module_position {
     int order, pattern, row;

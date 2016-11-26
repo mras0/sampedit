@@ -1,4 +1,6 @@
 #include "module.h"
+#include "xm.h"
+#include <base/stream_util.h>
 #include <base/note.h>
 #include <fstream>
 #include <stdint.h>
@@ -85,73 +87,6 @@ std::vector<float> convert_sample_data(const std::vector<unsigned char>& d) {
     return data;
 }
 
-std::string read_string(std::istream& in, int size)
-{
-    std::string str(size, '\0');
-    in.read(&str[0], size);
-    for (auto& c: str) {
-        if (c < 32 || c >= 128) {
-            c = ' ';
-        }
-    }
-    return str;
-}
-
-uint8_t read_be_u8(std::istream& in)
-{
-    return static_cast<uint8_t>(in.get());
-}
-
-uint16_t read_be_u16(std::istream& in)
-{
-    const uint8_t hi = read_be_u8(in);
-    const uint8_t lo = read_be_u8(in);
-    return (static_cast<uint16_t>(hi)<<8) + lo;
-}
-
-uint8_t read_le_u8(std::istream& in)
-{
-    return static_cast<uint8_t>(in.get());
-}
-
-uint16_t read_le_u16(std::istream& in)
-{
-    const uint8_t lo = read_le_u8(in);
-    const uint8_t hi = read_le_u8(in);
-    return (static_cast<uint16_t>(hi)<<8) + lo;
-}
-
-std::vector<uint16_t> read_le_u16(std::istream& in, int count) {
-    assert(count > 0);
-    std::vector<uint16_t> res(count);
-    for (auto& x : res) {
-        x = read_le_u16(in);
-    }
-    return res;
-}
-
-uint32_t read_le_u32(std::istream& in)
-{
-    const uint16_t lo = read_le_u16(in);
-    const uint16_t hi = read_le_u16(in);
-    return (static_cast<uint32_t>(hi)<<16) + lo;
-}
-
-class stream_pos_saver {
-public:
-    explicit stream_pos_saver(std::istream& in) : in_(in), pos_(in_.tellg()) {
-    }
-    ~stream_pos_saver() {
-        in_.seekg(pos_);
-    }
-    stream_pos_saver(const stream_pos_saver&) = delete;
-    stream_pos_saver& operator=(const stream_pos_saver&) = delete;
-
-private:
-    std::istream&       in_;
-    std::ios::streampos pos_;
-};
-
 bool is_s3m(std::istream& in)
 {
     stream_pos_saver sps{in};
@@ -167,8 +102,17 @@ void s3m_seek(std::istream& in, int para_pointer)
 
 void skip(std::istream& in, int count) {
     assert(count > 0);
-    in.seekg((int)in.tellg() + count);
+    in.seekg(count, std::ios_base::cur);
     assert(in);
+}
+
+std::vector<uint16_t> read_le_u16(std::istream& in, int count) {
+    assert(count > 0);
+    std::vector<uint16_t> res(count);
+    for (auto& x : res) {
+        x = read_le_u16(in);
+    }
+    return res;
 }
 
 constexpr uint32_t make_sig(char a, char b, char c, char d)
@@ -557,7 +501,10 @@ module load_module(const char* filename)
     }
 
     module mod;
-    if (is_s3m(in)) {
+    if (is_xm(in)) {
+        mod.type = module_type::xm;
+        load_xm(in, filename, mod);
+    } else if (is_s3m(in)) {
         mod.type = module_type::s3m;
         load_s3m(in, filename, mod);
     } else if (is_mod(in)) {
