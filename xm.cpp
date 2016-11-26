@@ -335,6 +335,12 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             sanitize(name);
 
             mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.relative_note + samp_hdr.finetune/16.0f), name}});
+            auto& s = mod.instruments.back().samp;
+            const int loop_type = samp_hdr.type & xm_sample_type_loop_mask;
+            if (loop_type) {
+                assert(loop_type == xm_sample_loop_type_forward);
+                s.loop(samp_hdr.loop_start, samp_hdr.loop_length);
+            }
         }
     }
 }

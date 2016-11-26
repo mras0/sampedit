@@ -835,9 +835,23 @@ public:
                 volume(0);
                 return;
             }
+            const int effect_type = note.effect >> 8;
             const int period = mod().note_to_period(note.note);
-            set_period(period);
-            trig(0);
+            if (effect_type == 3 || effect_type == 5) {
+                set_porta_target(period);
+            } else {
+                set_period(period);
+
+                if (note.effect>>4 != 0xED) {
+                    int offset = 0;
+                    if (effect_type == 9) {
+                        offset = (note.effect & 0xff) << 8;
+                        if (offset) sample_offset_ = offset;
+                        else offset = sample_offset_;
+                    }
+                    trig(offset);
+                }
+            }
         }
         if (note.volume) {
             const int vol = note.volume - volume_byte_offset;
@@ -848,15 +862,83 @@ public:
     virtual void process_effect(int tick, int effect) override {
         const int effect_type = effect >> 8;
         const int xy          = effect & 0xff;
-        //const int x           = xy >> 4;
-        //const int y           = xy & 0xf;
+        const int x           = xy >> 4;
+        const int y           = xy & 0xf;
         assert(effect_type < 38);
-        if (!tick) {
-            if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[effect_type], xy);
+        switch (effect_type) {
+        case 0x01: // 1xy Porta down
+            if (tick) {
+                do_porta(-xy);
+            }
+            return;
+        case 0x02: // 2xy Porta down
+            if (tick) {
+                do_porta(+xy);
+            }
+            return;
+        case 0x3: // 3xy Porta to note
+            if (xy) porta_speed(xy);
+            if (tick) {
+                do_porta_to_note();
+            }
+            return;
+        case 0x9: // 9xy Sample offset
+            break;
+        case 0xA: // Axy Volume slide
+            if (tick) {
+                do_volume_slide(x, y);
+            }
+            return;
+        case 0xC: // Cxy Set volume
+            if (tick == 0) {
+                volume(xy);
+            }
+            return;
+        case 0xE:
+            switch (x) {
+            case 0x9: // E9x Retrig note
+                assert(y);
+                if (tick && tick % y == 0) {
+                    trig(0);
+                }
+                return;
+            case 0xA: // EAy Fine volume slide up
+                if (!tick)  {
+                    do_volume_slide(+y);
+                }
+                return;
+            case 0xB: // EAy Fine volume slide down
+                if (!tick) {
+                    do_volume_slide(-y);
+                }
+                return;            
+            case 0xD: // EDy Delay note
+                if (tick == y) {
+                    trig(0);
+                }
+                return;
+            default:
+                if (!tick) {
+                    wprintf(L"%2.2d: Ignoring effect E%02X\n", current_position().row, xy);
+                }
+            }
+            break;
+        case 0xF: // Fxy Set speed
+            if (tick) return;
+            if (xy < 0x20) {
+                do_set_speed(xy);
+            } else {
+                do_set_tempo(xy);
+            }
+            return;
+        default:
+            if (!tick) {
+                wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[effect_type], xy);
+            }
         }
     }
-
-protected:
+private:
+    int  sample_offset_ = 0;
 };
 
 std::unique_ptr<channel_base> make_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) {

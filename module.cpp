@@ -56,7 +56,7 @@ int module::note_to_period(piano_key note) const
         //                                C-   C#   D-   D#   E-   F-   F#   G-   G-#  A-   A#   B-
         const int xm_amiga_periods[12] = {907, 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480};
         const int period = static_cast<int>(0.5f + xm_amiga_periods[static_cast<int>(note) % 12] * 16.0f / pow(2.0f, static_cast<int>(note) / 12 - 1));
-        wprintf(L"Note %S -> %d\n", piano_key_to_string(note).c_str(), period);
+        //wprintf(L"Note %S -> %d\n", piano_key_to_string(note).c_str(), period);
         return period;
     }
 
