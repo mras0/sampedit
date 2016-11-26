@@ -9,7 +9,8 @@ public:
     virtual void process_effect(int tick, int effect) = 0;
 
 protected:
-    explicit channel_base(mod_player::impl& player, sample_voice& voice) : player_(player), voice_(voice) {
+    explicit channel_base(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : player_(player), voice_(voice) {
+        voice_.pan(default_pan / 255.0f);
     }
 
     //
@@ -94,7 +95,9 @@ protected:
         set_voice_period(period_);
     }
 
-    void do_arpeggio(int amount) {
+    void do_arpeggio(int tick, int x, int y) {
+        if (!tick) return;
+        const int amount = (tick % 3 == 0) ? 0 : (tick % 3 == 1) ? x : y;
         const int res_per = mod().freq_to_period(mod().period_to_freq(period_) * note_difference_to_scale(static_cast<float>(amount)));
         //wprintf(L"Arpeggio base period = %d, amount = %d, resulting period = %d\n", period_, amount, res_per);
         set_voice_period(res_per);
@@ -125,15 +128,13 @@ protected:
         }
     }
 
-    void set_vibrato_speed(int speed) {
-        vib_speed_ = speed;
-    }
+    void do_vibrato(int tick, int speed, int depth) {
+        if (!tick) {
+            if (speed) vib_speed_ = speed;
+            if (depth) vib_depth_ = depth;
+            return;
+        }
 
-    void set_vibrato_depth(int depth) {
-        vib_depth_ = depth;
-    }
-
-    void do_vibrato() {
         static const uint8_t sinetable[32] ={
             0, 24, 49, 74, 97,120,141,161,
             180,197,212,224,235,244,250,253,
@@ -462,8 +463,7 @@ void channel_base::do_pattern_loop(int x) {
 //
 class channel : public channel_base {
 public:
-    explicit channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice) {
-        mix_chan().pan(default_pan / 255.0f);
+    explicit channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice, default_pan) {
     }
 
     virtual void process_note(const module_note& note) override {
@@ -569,10 +569,14 @@ private:
             do_set_speed(xy);
             break;
         case 'B': // Pattern jump
-            if (!tick) wprintf(L"Pattern jump! B%02X\n", xy);
-            process_mod_effect(tick, 0xB00 | xy);
+            if (!tick) {
+                wprintf(L"Pattern jump! B%02X\n", xy);
+                do_pattern_jump(xy);
+            }
         case 'C': // Pattern break
-            process_mod_effect(tick, 0xD00 | xy);
+            if (!tick) {
+                do_pattern_break(x*10 + y);
+            }
             break;
         case 'D': // Volume slide 
             do_s3m_volume_slide(tick, xy);
@@ -584,13 +588,13 @@ private:
             do_s3m_porta(tick, -1, xy);
             break;
         case 'H': // Vibrato
-            process_mod_effect(tick, 0x400 | xy);
+            do_vibrato(tick, x, y);
             break;
         case 'J': // Arpeggio
-            process_mod_effect(tick, 0x000 | xy);
+            do_arpeggio(tick, x, y);
             break;
         case 'K': // Kxy Vibrato + Volume Slide
-            process_mod_effect(tick, 0x400);
+            do_vibrato(tick, 0, 0);
             do_s3m_volume_slide(tick, xy);
             break;
         case 'G': // Gxy Porta to note
@@ -686,13 +690,7 @@ private:
         const int y  = xy&0xf;
         switch (effect>>8) {
         case 0x00: // 0xy Arpeggio
-            if (tick) {
-                switch (tick % 3) {
-                case 0: do_arpeggio(0); break;
-                case 1: do_arpeggio(x); break;
-                case 2: do_arpeggio(y); break;
-                }
-            }
+            do_arpeggio(tick, x, y);
             return;
         case 0x01: // 1xy Porta down
             if (tick) {
@@ -711,12 +709,7 @@ private:
             }
             return;
         case 0x4: // 4xy Vibrato
-            if (!tick) {
-                if (x) set_vibrato_speed(x);
-                if (y) set_vibrato_depth(y);
-            } else {
-                do_vibrato();
-            }
+            do_vibrato(tick, x, y);
             return;
         case 0x5: // 5xy Porta + Voume slide (5xy = 300 + Axy)
             if (tick) {
@@ -726,7 +719,7 @@ private:
             return;
         case 0x6: // 6xy Vibrato + Volume slide (6xy = 400 + Axy)
             if (tick) {
-                do_vibrato();
+                do_vibrato(tick, 0, 0);
                 do_volume_slide(x, y);
             }
             return;
