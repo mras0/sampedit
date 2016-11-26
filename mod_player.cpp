@@ -491,7 +491,7 @@ public:
                 }
             }
         }
-        assert(note.volume == no_volume_byte);
+        assert(note.volume == 0);
     }
 
     virtual void process_effect(int tick, int effect) override {
@@ -661,9 +661,10 @@ public:
                 trig(offset);
             }
         }
-        if (note.volume != no_volume_byte) {
-            assert(note.volume >= 0 && note.volume <= mod_player::max_volume);
-            volume(note.volume);
+        if (note.volume) {
+            const int vol = note.volume - volume_byte_offset;
+            assert(vol >= 0 && vol <= mod_player::max_volume);
+            volume(vol);
         }
     }
 
@@ -818,10 +819,30 @@ private:
     }
 };
 
+//
+// xm_channel
+//
+class xm_channel : public channel_base {
+public:
+    explicit xm_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice, default_pan) {
+    }
+    virtual void process_note(const module_note& note) override {
+        (void)note;
+        assert(false);
+    }
+    virtual void process_effect(int tick, int effect) override {
+        (void)tick; (void)effect;
+        assert(false);
+    }
+
+protected:
+};
+
 std::unique_ptr<channel_base> make_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) {
     switch (player.mod().type) {
     case module_type::mod: return std::make_unique<mod_channel>(player, voice, default_pan);
     case module_type::s3m: return std::make_unique<s3m_channel>(player, voice, default_pan);
+    case module_type::xm: return std::make_unique<xm_channel>(player, voice, default_pan);
     }
     assert(false);
     throw std::runtime_error("Unknown module type");

@@ -20,6 +20,7 @@ private:
     std::ios::streampos pos_;
 };
 
+void sanitize(std::string& str);
 std::string read_string(std::istream& in, int size);
 
 inline uint8_t read_be_u8(std::istream& in)

@@ -95,10 +95,10 @@ private:
             ss << ".. ";
         }
         if (mod_.type != module_type::mod) {
-            assert(mod_.type == module_type::s3m);
-            if (note.volume != no_volume_byte) {
-                assert(note.volume < 100);
-                ss << 'v' << std::setw(2) << (int)note.volume << ' ';
+            if (note.volume) {
+                int volume = note.volume - volume_byte_offset;
+                assert(volume >= 0 && volume <= mod_player::max_volume);
+                ss << 'v' << std::setw(2) << (int)volume << ' ';
             } else {
                 ss << "... ";
             }
@@ -107,9 +107,14 @@ private:
             ss << std::hex;
             if (mod_.type == module_type::mod) {
                 ss << std::setw(3) << (int)note.effect;
-            } else {
-                assert(mod_.type == module_type::s3m);
+            } else if (mod_.type == module_type::s3m) {
                 ss << (char)((note.effect >> 8) + 'A' - 1);
+                ss << std::setw(2) << (int)(note.effect & 0xff);
+            } else {
+                assert(mod_.type == module_type::xm);
+                const int effect_type = (note.effect >> 8);
+                assert(effect_type < 38);
+                ss << "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[effect_type];
                 ss << std::setw(2) << (int)(note.effect & 0xff);
             }
         } else {
@@ -204,7 +209,9 @@ int main(int argc, char* argv[])
             if (skip_to > 0) {
                 mod_player_->skip_to_order(skip_to);
             }
-            mod_player_->toggle_playing();
+            if (mod_player_->mod().type != module_type::xm) {
+                mod_player_->toggle_playing();
+            }
         }
 
         MSG msg;

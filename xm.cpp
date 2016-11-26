@@ -110,7 +110,7 @@ void get(std::istream& in, xm_note& note) {
     const uint8_t first = read_le_u8(in);
     if (first & 0x80) {
         // Packed
-        note = xm_note{0, 0, 0, 0, 0};
+        note = xm_note{};
         if (first & 0x01) get(in, note.note);
         if (first & 0x02) get(in, note.instrument);
         if (first & 0x04) get(in, note.volume);
@@ -125,9 +125,16 @@ void get(std::istream& in, xm_note& note) {
     }
 }
 
+piano_key convert_xm_note_key(uint8_t n) {
+    if (!n) return piano_key::NONE;
+    if (n == 97) return piano_key::OFF;
+    assert(n >= 1 && n < 97);
+    return piano_key::C_0 + 12 * (1 + (n-1) / 12) + (n-1) % 12;
+}
+
 module_note convert_note(const xm_note& n) {
     module_note res;
-    res.note       = piano_key::C_0 + 12 * (1 + n.note / 16) + n.note % 16;
+    res.note       = convert_xm_note_key(n.note);
     res.instrument = n.instrument;
     res.volume     = n.volume;
     res.effect     = (n.effect_type<<8) | n.effect_param;
@@ -265,7 +272,8 @@ void load_xm(std::istream& in, const char* filename, module& mod)
     wprintf(L"#Patterns:    %d\n", xm.num_patterns);
     wprintf(L"#Instruments: %d\n", xm.num_instruments);
 
-    mod.name            = xm.name;
+    mod.name            = std::string(xm.name, xm.name+sizeof(xm.name));
+    sanitize(mod.name);
     mod.num_channels    = xm.num_channels;
     mod.initial_speed   = xm.default_tempo;
     mod.initial_tempo   = xm.default_bpm;
@@ -299,15 +307,36 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             throw std::runtime_error("Invalid/Unsupported XM: " + std::string(filename) + " Instrument " + std::to_string(ins) + " is invalid");
         }
         wprintf(L"%2.2d: %22.22S\n", ins, ins_hdr.name);
-        for (unsigned sample = 0; sample < ins_hdr.num_samples; ++sample) {
+
+        if (!ins_hdr.num_samples) {
+            mod.instruments.push_back(module_instrument{0, sample{std::vector<float>{}, 1.0f, ""}});
+            continue;
+        }
+
+        assert(ins_hdr.num_samples == 1);
+        for (unsigned samp = 0; samp < ins_hdr.num_samples; ++samp) {
             xm_sample_header samp_hdr;
             get(in, samp_hdr);
-            wprintf(L"  %2.2d: %22.22S\n", sample, samp_hdr.name);
+            wprintf(L"  %2.2d: %22.22S\n", samp, samp_hdr.name);
 
-            const bool is_16bit = (samp_hdr.type & xm_sample_type_16bit_mask) != 0;
-            in.seekg(samp_hdr.length * (is_16bit ? 2 : 1), std::ios_base::cur);
+            short last = 0;
+            std::vector<short> sample_data(samp_hdr.length);
+            for (unsigned i = 0; i < samp_hdr.length; ++i) {
+                short cur = 0;
+                if (samp_hdr.type & xm_sample_type_16bit_mask) {
+                    cur = static_cast<short>(read_le_u16(in));
+                } else {
+                    cur = static_cast<short>(static_cast<signed char>(read_le_u8(in)) << 8);
+                }
+                cur += last;
+                sample_data[i] = cur;
+                last = cur;
+            }
+
+            std::string name = std::string(samp_hdr.name, samp_hdr.name + sizeof(samp_hdr.name));
+            sanitize(name);
+
+            mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.relative_note + samp_hdr.finetune/16.0f), name}});
         }
     }
-
-    throw std::runtime_error("Could not load XM: " + std::string(filename));
 }

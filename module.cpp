@@ -65,26 +65,12 @@ int module::channel_default_pan(int channel) const
     if (type == module_type::mod) {
         const bool left = channel % 4 == 0 || channel % 4 == 3;
         return left ? default_pan_value : 0xFF - default_pan_value;
-    } else {
-        assert(type == module_type::s3m);
+    } else if (type == module_type::s3m) {
         return s3m.channel_panning[channel];
+    } else {
+        assert(type == module_type::xm);
+        return 128;
     }
-}
-
-std::vector<float> convert_sample_data(const std::vector<signed char>& d) {
-    std::vector<float> data(d.size());
-    for (size_t i = 0, len = d.size(); i < len; ++i) {
-        data[i] = d[i]/128.0f;
-    }
-    return data;
-}
-
-std::vector<float> convert_sample_data(const std::vector<unsigned char>& d) {
-    std::vector<float> data(d.size());
-    for (size_t i = 0, len = d.size(); i < len; ++i) {
-        data[i] = (d[i]/255.0f)*2-1;
-    }
-    return data;
 }
 
 bool is_s3m(std::istream& in)
@@ -248,7 +234,7 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
             in.read(reinterpret_cast<char*>(&data[0]), length);
         }
 
-        mod.instruments.push_back(module_instrument{volume, sample{convert_sample_data(data), static_cast<float>(c2spd), name}});
+        mod.instruments.push_back(module_instrument{volume, sample{data, static_cast<float>(c2spd), name}});
         if (sample_flags & 1) {
             assert(loop_start <= loop_end);
             mod.instruments.back().samp.loop(loop_start, loop_end - loop_start);
@@ -315,7 +301,8 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
             }
             if (b & 0x40) {
                 rd.volume = read_le_u8(in);
-                assert(rd.volume != no_volume_byte);
+                assert(rd.volume <= 64);
+                rd.volume += volume_byte_offset;
             }
             if (b & 0x80) {
                 const uint8_t effect       = read_le_u8(in);
@@ -451,7 +438,7 @@ void load_mod(std::istream& in, const char* filename, module& mod)
                 n.instrument = (b[0]&0xf0) | (b[2]>>4);
                 const int period = ((b[0]&0x0f) << 8) | b[1];
                 n.effect = ((b[2] & 0x0f) << 8) | b[3];
-                n.volume = no_volume_byte;
+                n.volume = 0;
                 n.note   = period_to_piano_key(period);
                 //if (period) {
                 //    const float freq = piano_key_to_freq(n.note, piano_key::C_5, 8363);
@@ -472,7 +459,7 @@ void load_mod(std::istream& in, const char* filename, module& mod)
             in.read(reinterpret_cast<char*>(&data[0]), s.length);
         }
 
-        mod.instruments.push_back(module_instrument{s.volume, sample{convert_sample_data(data), amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}});
+        mod.instruments.push_back(module_instrument{s.volume, sample{data, amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}});
         if (s.loop_length > 2) {
             mod.instruments.back().samp.loop(s.loop_start, s.loop_length);
         }

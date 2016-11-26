@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <string>
 
+std::vector<float> convert_sample_data(const std::vector<signed char>& d);
+std::vector<float> convert_sample_data(const std::vector<unsigned char>& d);
+std::vector<float> convert_sample_data(const std::vector<short>& d);
+
 class sample {
 public:
     explicit sample(const std::vector<float>& data, float c5_rate, const std::string& name)
@@ -13,7 +17,13 @@ public:
         , c5_rate_(c5_rate)
         , name_(name)
         , loop_start_(0)
-        , loop_length_(0) {}
+        , loop_length_(0) {
+    }
+
+    template<typename SampleType>
+    explicit sample(const std::vector<SampleType>& data, float c5_rate, const std::string& name)
+        : sample(convert_sample_data(data), c5_rate, name) {
+    }
 
     float c5_rate() const { return c5_rate_; }
 

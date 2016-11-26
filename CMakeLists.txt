@@ -31,7 +31,7 @@ add_executable(${PROJECT_NAME} main.cpp
     base/stream_util.h base/stream_util.cpp
     base/event.h
     base/job_queue.cpp base/job_queue.h
-    base/sample.h
+    base/sample.cpp base/sample.h
     base/voice.h
     base/sample_voice.cpp base/sample_voice.h
     base/note.cpp base/note.h
