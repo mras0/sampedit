@@ -24,8 +24,8 @@ public:
     static constexpr int max_rows     = 64;
     static constexpr int max_volume   = 64;
 
-private:
     class impl;
+private:
     std::unique_ptr<impl> impl_;
 };
 
