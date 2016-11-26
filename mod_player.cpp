@@ -182,13 +182,13 @@ std::unique_ptr<channel_base> make_channel(mod_player::impl& player, sample_voic
 
 class mod_player::impl {
 public:
-    explicit impl(const module& mod, mixer& m) : mod_(mod), mixer_(m) {
+    explicit impl(module&& mod, mixer& m) : mod_(std::move(mod)), mixer_(m) {
         for (int i = 0; i < mod_.num_channels; ++i) {
             voices_.emplace_back(mixer_.sample_rate());
         }
         for (int i = 0; i < mod_.num_channels; ++i) {
-            channels_.emplace_back(make_channel(*this, voices_[i], static_cast<uint8_t>(mod.channel_default_pan(i))));
-            wprintf(L"%2d: Pan %d\n", i+1,mod.channel_default_pan(i));
+            channels_.emplace_back(make_channel(*this, voices_[i], static_cast<uint8_t>(mod_.channel_default_pan(i))));
+            wprintf(L"%2d: Pan %d\n", i+1, mod_.channel_default_pan(i));
         }
         mixer_.at_next_tick([this] {
             set_speed(mod_.initial_speed);
@@ -398,7 +398,7 @@ private:
     }
 };
 
-mod_player::mod_player(const module& mod, mixer& m) : impl_(std::make_unique<impl>(mod, m)) {
+mod_player::mod_player(module&& mod, mixer& m) : impl_(std::make_unique<impl>(std::move(mod), m)) {
 }
 
 mod_player::~mod_player() = default;
@@ -827,12 +827,33 @@ public:
     explicit xm_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : channel_base(player, voice, default_pan) {
     }
     virtual void process_note(const module_note& note) override {
-        (void)note;
-        assert(false);
+        if (note.instrument) {
+            instrument_number(note.instrument);
+        }
+        if (note.note != piano_key::NONE) {
+            if (note.note == piano_key::OFF) {
+                volume(0);
+                return;
+            }
+            const int period = mod().note_to_period(note.note);
+            set_period(period);
+            trig(0);
+        }
+        if (note.volume) {
+            const int vol = note.volume - volume_byte_offset;
+            assert(vol >= 0 && vol <= mod_player::max_volume);
+            volume(vol);
+        }
     }
     virtual void process_effect(int tick, int effect) override {
-        (void)tick; (void)effect;
-        assert(false);
+        const int effect_type = effect >> 8;
+        const int xy          = effect & 0xff;
+        //const int x           = xy >> 4;
+        //const int y           = xy & 0xf;
+        assert(effect_type < 38);
+        if (!tick) {
+            if (!tick) wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[effect_type], xy);
+        }
     }
 
 protected:

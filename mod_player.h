@@ -9,7 +9,7 @@ class mixer;
 
 class mod_player {
 public:
-    explicit mod_player(const module& mod, mixer& m);
+    explicit mod_player(module&& mod, mixer& m);
     ~mod_player();
 
     const module& mod() const;

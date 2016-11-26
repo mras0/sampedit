@@ -11,6 +11,7 @@
 
 constexpr uint8_t default_pan_value = 0x30;
 constexpr float s3m_clock_rate      = 14317056.0f;
+constexpr float xm_clock_rate       = 14317456.0f; // 8363*1712
 
 constexpr float amiga_period_to_freq(int period) {
     return amiga_clock_rate / (period * 2);
@@ -30,8 +31,35 @@ const module_note* module::at(int ord, int row) const
     return &pattern[row * num_channels];
 }
 
+// XM amiga period table
+// PeriodTab = Array[0..12*8-1] of Word = (
+// 907,900,894,887,881,875,868,862,
+// 856,850,844,838,832,826,820,814,
+// 808,802,796,791,785,779,774,768,
+// 762,757,752,746,741,736,730,725,
+// 720,715,709,704,699,694,689,684,
+// 678,675,670,665,660,655,651,646,
+// 640,636,632,628,623,619,614,610,
+// 604,601,597,592,588,584,580,575,
+// 570,567,563,559,555,551,547,543,
+// 538,535,532,528,524,520,516,513,
+// 508,505,502,498,494,491,487,484,
+// 480,477,474,470,467,463,460,457);
+// Period = (PeriodTab[(Note MOD 12)*8 + FineTune/16]*(1-Frac(FineTune/16)) + PeriodTab[(Note MOD 12)*8 + FineTune/16]*(Frac(FineTune/16))) *16/2^(Note DIV 12);
+// (The period is interpolated for finer finetune values)
+// Frequency = 8363*1712/Period;
 int module::note_to_period(piano_key note) const
 {
+    if (type == module_type::xm) {
+        assert(!xm.use_linear_frequency);
+        static_assert(static_cast<int>(piano_key::C_0) == 0, "");
+        //                                C-   C#   D-   D#   E-   F-   F#   G-   G-#  A-   A#   B-
+        const int xm_amiga_periods[12] = {907, 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480};
+        const int period = static_cast<int>(0.5f + xm_amiga_periods[static_cast<int>(note) % 12] * 16.0f / pow(2.0f, static_cast<int>(note) / 12 - 1));
+        wprintf(L"Note %S -> %d\n", piano_key_to_string(note).c_str(), period);
+        return period;
+    }
+
     const int amiga_period = freq_to_amiga_period(piano_key_to_freq(note, piano_key::C_5, amiga_c5_rate));
     if (type == module_type::mod) {
         return amiga_period;
@@ -53,9 +81,12 @@ int module::freq_to_period(float freq) const {
 float module::period_to_freq(int period) const {
     if (type == module_type::mod) {
         return amiga_period_to_freq(period);
-    } else {
-        assert(type == module_type::s3m);
+    } else if (type == module_type::s3m) {
         return s3m_clock_rate / period;
+    } else {
+        assert(type == module_type::xm);
+        assert(!xm.use_linear_frequency);
+        return xm_clock_rate / period;
     }
 }
 
@@ -330,7 +361,7 @@ piano_key period_to_piano_key(int period) {
 
     /*
     Finetune 0
-    C    C#   D    D#   E    F    F#   G    G#   A    A#   B
+              C    C#   D    D#   E    F    F#   G    G#   A    A#   B
     Octave 0:1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907
     Octave 1: 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453
     Octave 2: 428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226
@@ -481,18 +512,18 @@ module load_module(const char* filename)
         throw std::runtime_error("Could not open " + std::string(filename));
     }
 
-    module mod;
     if (is_xm(in)) {
-        mod.type = module_type::xm;
+        module mod{module_type::xm};
         load_xm(in, filename, mod);
+        return mod;
     } else if (is_s3m(in)) {
-        mod.type = module_type::s3m;
+        module mod{module_type::s3m};
         load_s3m(in, filename, mod);
+        return mod;
     } else if (is_mod(in)) {
-        mod.type = module_type::mod;
+        module mod{module_type::mod};
         load_mod(in, filename, mod);
-    } else {
-        throw std::runtime_error("Unsupported format " + std::string(filename));
+        return mod;
     }
-    return mod;
+    throw std::runtime_error("Unsupported format " + std::string(filename));
 }

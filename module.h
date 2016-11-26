@@ -31,7 +31,53 @@ struct module_position {
 };
 
 struct module {
-    module_type                            type;
+    explicit module(module_type type) : type(type) {
+        switch (type) {
+        case module_type::mod:
+            break;
+        case module_type::s3m:
+            new (&s3m) s3m_s();
+            break;
+        case module_type::xm:
+            new (&xm) xm_s();
+            break;
+        }
+    }
+    module(module&& mod)
+        : type(mod.type)
+        , initial_speed(mod.initial_speed)
+        , initial_tempo(mod.initial_tempo)
+        , name(std::move(mod.name))
+        , instruments(std::move(mod.instruments))
+        , order(std::move(mod.order))
+        , num_channels(mod.num_channels)
+        , patterns(std::move(mod.patterns)) {
+        switch (type) {
+        case module_type::mod:
+            break;
+        case module_type::s3m:
+            new (&s3m) s3m_s(std::move(mod.s3m));
+            break;
+        case module_type::xm:
+            new (&xm) xm_s(std::move(mod.xm));
+            break;
+        }
+    }
+
+    ~module() {
+        switch (type) {
+        case module_type::mod:
+            break;
+        case module_type::s3m:
+            s3m.~s3m_s();
+            break;
+        case module_type::xm:
+            xm.~xm_s();
+            break;
+        }
+    }
+
+    const module_type                      type;
     int                                    initial_speed = 6;
     int                                    initial_tempo = 125;
     std::string                            name;
@@ -40,9 +86,16 @@ struct module {
     int                                    num_channels;
     std::vector<std::vector<module_note>>  patterns;
 
-    struct {
+    struct s3m_s {
         std::vector<uint8_t> channel_panning;
-    } s3m;
+    };
+    struct xm_s {
+        bool                           use_linear_frequency;
+    };
+    union {
+        s3m_s s3m;
+        xm_s  xm;
+    };
 
     static constexpr int rows_per_pattern = 64;
 

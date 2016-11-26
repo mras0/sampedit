@@ -50,6 +50,7 @@ struct xm_header {
     uint16_t default_bpm;
     uint8_t  order[256];
 };
+constexpr uint8_t xm_header_flags_linear_frequency_mask     = 0x03;
 
 void get(std::istream& in, xm_header& xm) {
     get(in, xm.id);
@@ -278,10 +279,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
     mod.initial_speed   = xm.default_tempo;
     mod.initial_tempo   = xm.default_bpm;
     mod.order           = std::vector<uint8_t>(xm.order, xm.order + xm.song_length);
-#if 0
-    std::vector<module_instrument>         instruments;
-    std::vector<sample>                    samples;
-#endif
+    mod.xm.use_linear_frequency = (xm.flags & xm_header_flags_linear_frequency_mask) != 0;
 
     for (unsigned pat = 0; pat < xm.num_patterns; ++pat) {
         xm_pattern_header pat_hdr;

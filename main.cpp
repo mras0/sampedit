@@ -144,7 +144,7 @@ int main(int argc, char* argv[])
             mod_ = &mod;
             grid.reset(new mod_grid{mod});
         } else {
-            static module mod;
+            static module mod{module_type::mod};
             mod.instruments.emplace_back(module_instrument{64, sample{create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample"}});
             mod.order.push_back(0);
             grid.reset(new test_grid{});
@@ -209,9 +209,7 @@ int main(int argc, char* argv[])
             if (skip_to > 0) {
                 mod_player_->skip_to_order(skip_to);
             }
-            if (mod_player_->mod().type != module_type::xm) {
-                mod_player_->toggle_playing();
-            }
+            mod_player_->toggle_playing();
         }
 
         MSG msg;
