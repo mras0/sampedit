@@ -12,6 +12,8 @@
 #include <tuple>
 #include <utility>
 
+#include <base/event.h>
+
 extern void fatal_error(const wchar_t* api, unsigned error = GetLastError());
 
 constexpr COLORREF default_background_color = RGB(0x20, 0x20, 0x20);
@@ -147,29 +149,5 @@ struct msg ## _handler : public handler_base { \
 };
 template<typename Derived>
 ATOM window_base<Derived>::class_atom_ = 0;
-
-template<typename... ArgTypes>
-using callback_function_type = std::function<void (ArgTypes...)>;
-
-template<typename... ArgTypes>
-class event {
-public:
-    using callback_type = callback_function_type<ArgTypes...>;
-
-    void subscribe(const callback_type& cb) {
-        assert(cb);
-        subscribers_.push_back(cb);
-    }
-
-    void operator()(ArgTypes... args) {
-        for (auto& s : subscribers_) {
-            s(args...);
-        }
-    }
-
-private:
-    std::vector<callback_type> subscribers_;
-};
-
 
 #endif

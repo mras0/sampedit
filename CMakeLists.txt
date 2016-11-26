@@ -26,6 +26,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 add_executable(${PROJECT_NAME} main.cpp
     module.cpp module.h
     mixer.cpp mixer.h
+    mod_player.cpp mod_player.h
+    base/event.h
     base/job_queue.cpp base/job_queue.h
     base/sample.h
     base/voice.h
