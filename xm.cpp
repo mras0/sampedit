@@ -284,18 +284,29 @@ void load_xm(std::istream& in, const char* filename, module& mod)
     for (unsigned pat = 0; pat < xm.num_patterns; ++pat) {
         xm_pattern_header pat_hdr;
         get(in, pat_hdr);
+        const auto pat_start = in.tellg();
+        //wprintf(L"Pattern %2.2d: header_length=%d, packing=%d, rows=%d, size=%d\n", pat, pat_hdr.header_length, pat_hdr.packing_type, pat_hdr.num_rows, pat_hdr.data_size);
         if (!check(pat_hdr)) {
+            assert(false);
             throw std::runtime_error("Invalid/Unsupported XM: " + std::string(filename) + " Pattern " + std::to_string(pat) + " is invalid");
         }
         std::vector<module_note> this_pattern;
-        for (unsigned row = 0; row < pat_hdr.num_rows; ++row) {
-            for (unsigned ch = 0; ch < xm.num_channels; ++ch) {
-                xm_note note;
-                get(in, note);
-                this_pattern.push_back(convert_note(note));
+        const int num_notes = pat_hdr.num_rows * xm.num_channels;
+        this_pattern.reserve(num_notes);
+        if (pat_hdr.data_size) {
+            for (unsigned row = 0; row < pat_hdr.num_rows; ++row) {
+                for (unsigned ch = 0; ch < xm.num_channels; ++ch) {
+                    xm_note note;
+                    get(in, note);
+                    this_pattern.push_back(convert_note(note));
+                }
             }
+            assert(this_pattern.size() == num_notes);
+        } else {
+            this_pattern.resize(num_notes);
         }
         mod.patterns.push_back(std::move(this_pattern));
+        assert(in.tellg() - pat_start == pat_hdr.data_size);
     }
 
     for (unsigned ins = 0; ins < xm.num_instruments; ++ins) {
