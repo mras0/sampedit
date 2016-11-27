@@ -43,8 +43,11 @@ private:
         wss << std::setfill(L'0') << std::uppercase;
         for (size_t i = 0; i < mod_->instruments.size(); ++i) {
             const auto& inst = mod_->instruments[i];
-            wss << "Instrument " << std::dec << std::setw(2) << (i+1);
-            wss << "\tVolume " << std::hex << std::setw(2) << inst.volume << " \t";
+            wss << "Instrument " << std::dec << std::setw(2) << (i+1) << " \t";
+            wss << "Volume " << std::hex << std::setw(2) << inst.volume << " \t";
+            if (mod_->type == module_type::xm) {
+                wss << "Fadeout " << std::hex << std::setw(4) << inst.volume_fadeout << " \t";
+            }
             wss << std::dec;
             constexpr int len_w = 8;
             const auto& s = inst.samp;

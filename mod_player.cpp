@@ -33,13 +33,15 @@ protected:
     // Trig
     //
     void trig(int offset) {
-        vib_pos_ = 0;
+        vib_pos_        = 0;
+        fadeout_volume_ = max_fadeout_volume;
         if (!instrument_number()) {
             wprintf(L"Warning: No sample. Ignoring trig offset %d\n", offset);
             return;
         }
         auto& s = instrument().samp;
         if (s.length()) {
+            set_voice_volume();
             voice_.play(s, std::min(s.length(), offset));
         }
     }
@@ -50,7 +52,15 @@ protected:
     int volume() const { return volume_; }
     void volume(int vol) {
         volume_ = std::max(0, std::min(mod_player::max_volume, vol));
-        voice_.volume(static_cast<float>(volume_) / mod_player::max_volume);
+        set_voice_volume();
+    }
+
+    void update_fadeout() {
+        if (!instrument_number()) {
+            return;
+        }
+        fadeout_volume_ = std::max(0, fadeout_volume_ - instrument().volume_fadeout);
+        set_voice_volume();
     }
 
     void do_volume_slide(int amount) {
@@ -195,9 +205,10 @@ protected:
 private:
     mod_player::impl&   player_;
     sample_voice&       voice_;
-    int                 volume_     = 0;
-    int                 instrument_ = 0;
-    int                 period_ = 0;
+    int                 volume_         = 0;
+    int                 fadeout_volume_ = 0;
+    int                 instrument_     = 0;
+    int                 period_         = 0;
 
     // Effect memory
     int                 porta_target_period_ = 0;
@@ -206,6 +217,8 @@ private:
     int                 vib_speed_ = 0;
     int                 vib_pos_   = 0;
     int                 last_retrig_ = 0;
+
+    static constexpr int max_fadeout_volume = 0xffff;
 
     void set_voice_period(int period) {
         assert(period > 0);
@@ -216,6 +229,11 @@ private:
         auto& s = instrument().samp;
         const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
         voice_.freq(mod().period_to_freq(adjusted_period));
+    
+    }
+
+    void set_voice_volume() {
+        voice_.volume(fadeout_volume_ / static_cast<float>(max_fadeout_volume+1) * static_cast<float>(volume_) / mod_player::max_volume);
     }
 };
 
@@ -868,11 +886,14 @@ public:
                     trig(offset);
                 }
             }
+        } else {
+            update_fadeout();
         }
     }
 
     virtual void process_effect(int tick, const module_note& note) override {
         process_xm_volume_command(tick, note);
+        if (!tick) update_fadeout();
 
         const int effect      = note.effect;
         if (!effect) return;

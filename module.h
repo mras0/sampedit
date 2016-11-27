@@ -52,8 +52,13 @@ inline volume_command operator+(volume_command l, int r) {
 constexpr float amiga_clock_rate     = 7159090.5f;
 constexpr float amiga_c5_rate        = amiga_clock_rate / (2 * 428);
 
-struct module_instrument {
+class module_instrument {
+public:
+    explicit module_instrument(int volume, sample&& samp) : volume(volume), samp(samp) {
+    }
+
     int    volume;
+    int    volume_fadeout = 0;
     sample samp;
 };
 

@@ -344,6 +344,23 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             continue;
         }
 
+#define EXPECT(elem, val) if (ins_hdr.elem != (val)) wprintf(L"%d != %d -- ins_hdr.%S != %S\n", ins_hdr.elem, val, #elem, #val);
+        //EXPECT(num_volume_points, 0);
+        //EXPECT(num_panning_points, 0);
+        //EXPECT(volume_sustain_point, 0);
+        //EXPECT(volume_loop_start, 0);
+        //EXPECT(volume_loop_end, 0);
+        //EXPECT(panning_sustain_point, 0);
+        //EXPECT(panning_loop_start, 0);
+        //EXPECT(panning_loop_end, 0);
+        EXPECT(volume_type, 0);  // bit 0: On; 1: Sustain; 2: Loop
+        EXPECT(panning_type, 0); // bit 0: On; 1: Sustain; 2: Loop
+        EXPECT(vibrato_type, 0);
+        EXPECT(vibrato_sweep, 0);
+        EXPECT(vibrato_depth, 0);
+        EXPECT(vibrato_rate, 0);
+
+
         assert(ins_hdr.num_samples == 1);
         for (unsigned samp = 0; samp < ins_hdr.num_samples; ++samp) {
             xm_sample_header samp_hdr;
@@ -374,9 +391,10 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             sanitize(name);
 
             mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.relative_note + samp_hdr.finetune/128.0f), name}});
-            auto& s = mod.instruments.back().samp;
+            auto& ins = mod.instruments.back();
+            ins.volume_fadeout = ins_hdr.volume_fadeout;
             if (loop_type) {
-                s.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
+                ins.samp.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
             }
         }
     }
