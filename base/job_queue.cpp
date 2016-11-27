@@ -17,6 +17,27 @@ public:
         jobs_.push(job);
     }
 
+    void dispatch(const job_type& job) {
+        bool sync = false;
+        std::mutex sync_mutex;
+        std::condition_variable sync_cv;
+
+        {
+            std::lock_guard<std::mutex> job_lock{mutex_};
+            assert(std::this_thread::get_id() != thread_id_);
+            jobs_.push(job);
+            jobs_.push([&] {
+                {
+                    std::lock_guard<std::mutex> sync_lock{sync_mutex};
+                    sync = true;
+                }
+                sync_cv.notify_one();
+            });
+        }
+        std::unique_lock<std::mutex> sync_lock{sync_mutex};
+        sync_cv.wait(sync_lock, [&] { return sync; });
+    }
+
     void perform_all() {
         std::queue<job_type> jobs;
         {
@@ -56,6 +77,10 @@ job_queue::~job_queue() = default;
 
 void job_queue::post(const job_type& job) {
     impl_->post(job);
+}
+
+void job_queue::dispatch(const job_type& job) {
+    impl_->dispatch(job);
 }
 
 void job_queue::perform_all() {

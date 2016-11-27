@@ -16,8 +16,8 @@ public:
         return sample_rate_;
     }
 
-    void at_next_tick(const job_queue::job_type& job) {
-        at_next_tick_.post(job);
+    job_queue& tick_queue() {
+        return at_next_tick_;
     }
 
     void add_voice(voice& v) {
@@ -90,8 +90,8 @@ mixer::mixer() : impl_(std::make_unique<impl>()) {
 
 mixer::~mixer() = default;
 
-void mixer::at_next_tick(const job_queue::job_type& job) {
-    impl_->at_next_tick(job);
+job_queue& mixer::tick_queue() {
+    return impl_->tick_queue();
 }
 
 void mixer::add_voice(voice& v) {

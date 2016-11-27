@@ -15,7 +15,7 @@ public:
         return sample_rate_;
     }
 
-    void at_next_tick(const job_queue::job_type& job);
+    job_queue& tick_queue();
 
     void add_voice(voice& v);
     void remove_voice(voice& v);

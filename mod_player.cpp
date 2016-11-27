@@ -193,7 +193,7 @@ public:
             channels_.emplace_back(make_channel(*this, voices_[i], static_cast<uint8_t>(mod_.channel_default_pan(i))));
             wprintf(L"%2d: Pan %d\n", i+1, mod_.channel_default_pan(i));
         }
-        mixer_.at_next_tick([this] {
+        mixer_.tick_queue().post([this] {
             set_speed(mod_.initial_speed);
             set_tempo(mod_.initial_tempo);
             tick_ = mod_.initial_speed+1;
@@ -205,7 +205,7 @@ public:
     }
 
     ~impl() {
-        mixer_.at_next_tick([this] {
+        mixer_.tick_queue().dispatch([this] {
             for (auto& v : voices_) {
                 mixer_.remove_voice(v);
             }
@@ -217,7 +217,7 @@ public:
 
     void skip_to_order(int order) {
         assert(order >= 0 && order < mod_.order.size());
-        mixer_.at_next_tick([order, this] {
+        mixer_.tick_queue().post([order, this] {
             // TODO: Process (some) effects...
             wprintf(L"Skipping to order %d, cur = %d\n", order, order_);
             order_ = order;
@@ -228,13 +228,13 @@ public:
     }
 
     void stop() {
-        mixer_.at_next_tick([this] {
+        mixer_.tick_queue().dispatch([this] {
             set_playing(false);
         });
     };
 
     void toggle_playing() {
-        mixer_.at_next_tick([this] {
+        mixer_.tick_queue().post([this] {
             set_playing(!playing_);
         });
     }
@@ -264,7 +264,7 @@ private:
     friend channel_base;
 
     void schedule() {
-        mixer_.at_next_tick([this] { tick(); });
+        mixer_.tick_queue().post([this] { tick(); });
     }
 
     void set_playing(bool playing) {

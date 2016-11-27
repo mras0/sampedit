@@ -12,6 +12,7 @@ public:
     ~job_queue();
 
     void post(const job_type& job);
+    void dispatch(const job_type& job);
     void perform_all();
 
 #ifndef NDEBUG

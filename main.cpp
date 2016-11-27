@@ -128,6 +128,31 @@ private:
     }
 };
 
+class keyboard_voice : public sample_voice {
+public:
+    keyboard_voice(mixer& m) : sample_voice(m.sample_rate()), mixer_(m) {
+        volume(0.5f);
+        mixer_.tick_queue().post([&] { mixer_.add_voice(*this); });
+    }
+    ~keyboard_voice() {
+        mixer_.tick_queue().dispatch([&] { mixer_.remove_voice(*this); });
+    }
+    void play_sample(const sample& samp, piano_key key) {
+        const auto freq = piano_key_to_freq(key, piano_key::C_5, samp.c5_rate());
+        wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
+        mixer_.tick_queue().post([&, freq] {
+            this->freq(freq);
+            this->play(samp, 0);
+        });
+    }
+
+    keyboard_voice(const keyboard_voice&) = delete;
+    keyboard_voice& operator=(const keyboard_voice&) = delete;
+
+private:
+    mixer& mixer_;
+};
+
 int main(int argc, char* argv[])
 {
     try {
@@ -157,24 +182,16 @@ int main(int argc, char* argv[])
         assert(mod_);
         main_wnd.set_module(*mod_);
 
-        sample_voice keyboard_voice(m.sample_rate());
-        keyboard_voice.volume(0.5f);
-        m.at_next_tick([&] { m.add_voice(keyboard_voice); });
+        keyboard_voice kv{m};
         main_wnd.on_piano_key_pressed([&](piano_key key) {
             assert(key != piano_key::NONE);
             if (key == piano_key::OFF) {
-                m.at_next_tick([&] { keyboard_voice.key_off(); } );
+                m.tick_queue().post([&] { kv.key_off(); } );
                 return;
             }
             const int idx = main_wnd.current_sample_index();
             if (idx < 0 || idx >= mod_->instruments.size()) return;
-            auto& samp = mod_->instruments[idx].samp;
-            const auto freq = piano_key_to_freq(key, piano_key::C_5, samp.c5_rate());
-            wprintf(L"Playing %S at %f Hz\n", piano_key_to_string(key).c_str(), freq);
-            m.at_next_tick([&, idx, freq] {
-                keyboard_voice.freq(freq);
-                keyboard_voice.play(samp, 0); 
-            });
+            kv.play_sample(mod_->instruments[idx].samp, key);
         });
         main_wnd.on_start_stop([&]() {
             if (mod_player_) {
