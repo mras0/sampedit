@@ -44,14 +44,26 @@ public:
         assert(sample_);
 
         while (num_stereo_samples) {
-            const int end = state_ == state::looping ? sample_->loop_start() + sample_->loop_length() : sample_->length();
-            assert(pos_ <= end);
-            const int samples_till_end = static_cast<int>((end - pos_) / incr_);
+            const int end = current_end();
+            assert(state_ == state::looping_backward && pos_ >= end || pos_ <= end);
+            const float real_incr = state_ == state::looping_backward ? -incr_ : incr_;
+            const int samples_till_end = static_cast<int>((end - pos_) / real_incr);
+            assert(samples_till_end >= 0);
             if (!samples_till_end) {
-                if (sample_->loop_length()) {
-                    assert(state_ == state::playing_first || state_ == state::looping);
-                    pos_   = static_cast<float>(sample_->loop_start());
-                    state_ = state::looping;
+                if (sample_->loop_type() != loop_type::none) {
+                    assert(state_ == state::playing_first || state_ == state::looping_forward || state_ == state::looping_backward);
+                    if (sample_->loop_type() == loop_type::pingpong) {
+                        if (state_ == state::looping_backward) {
+                            assert(pos_-sample_->loop_start() < incr_);
+                            state_ = state::looping_forward;
+                        } else {
+                            assert(end-pos_ < incr_);
+                            state_ = state::looping_backward;
+                        }
+                    } else {
+                        pos_   = static_cast<float>(sample_->loop_start());
+                        state_ = state::looping_forward;
+                    }
                     continue;
                 } else {
                     //wprintf(L"End of instrument at %f\n", pos_);
@@ -62,10 +74,10 @@ public:
 
             const int now = std::min(samples_till_end, num_stereo_samples);
             assert(now > 0);
-            do_mix_sample(stero_buffer, now, *sample_, pos_, incr_, volume_ * panl_, volume_ * panr_);
+            do_mix_sample(stero_buffer, now, *sample_, pos_, real_incr, volume_ * panl_, volume_ * panr_);
             num_stereo_samples -= now;
             stero_buffer       += 2* now;
-            pos_               += incr_ * now;
+            pos_               += real_incr * now;
         }
     }
 
@@ -81,8 +93,15 @@ private:
     enum class state {
         not_playing,
         playing_first,
-        looping,
+        looping_forward,
+        looping_backward,
     } state_ = state::not_playing;
+
+    int current_end() const {
+        if (state_ == state::looping_forward) return sample_->loop_start() + sample_->loop_length();
+        if (state_ == state::looping_backward) return sample_->loop_start();
+        return sample_->length();
+    }
 
     static void do_mix_sample(float* stero_buffer, int num_stereo_samples, const sample& samp, float pos, float incr, float lvol, float rvol) {
         for (int i = 0; i < num_stereo_samples; ++i) {

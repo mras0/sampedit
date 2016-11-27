@@ -10,12 +10,15 @@ std::vector<float> convert_sample_data(const std::vector<signed char>& d);
 std::vector<float> convert_sample_data(const std::vector<unsigned char>& d);
 std::vector<float> convert_sample_data(const std::vector<short>& d);
 
+enum class loop_type { none, forward, pingpong };
+
 class sample {
-public:
+public:        
     explicit sample(const std::vector<float>& data, float c5_rate, const std::string& name)
         : data_(data)
         , c5_rate_(c5_rate)
         , name_(name)
+        , loop_type_(loop_type::none)
         , loop_start_(0)
         , loop_length_(0) {
     }
@@ -30,15 +33,18 @@ public:
     const std::string& name() const { return name_; }
 
     int length() const { return static_cast<int>(data_.size()); }
-
+    
+    ::loop_type loop_type() const { return loop_type_; }
     int loop_start() const { return loop_start_; }
     int loop_length() const { return loop_length_; }
     
-    void loop(int start, int loop_length) {
-        assert(start >= 0 && start < length());
-        assert(loop_length > 0 && start+loop_length <= length());
-        loop_start_ = start;
+    void loop(int loop_start, int loop_length, ::loop_type type) {
+        assert(loop_start >= 0 && loop_start < length());
+        assert(loop_length > 0 && loop_start+loop_length <= length());
+        assert(type != loop_type::none);
+        loop_start_  = loop_start;
         loop_length_ = loop_length;
+        loop_type_   = type;
     }
 
     float get(int pos) const {
@@ -55,6 +61,7 @@ private:
     std::vector<float> data_;
     float              c5_rate_;
     std::string        name_;
+    ::loop_type        loop_type_;
     int                loop_start_;
     int                loop_length_;
 };

@@ -338,8 +338,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             auto& s = mod.instruments.back().samp;
             const int loop_type = samp_hdr.type & xm_sample_type_loop_mask;
             if (loop_type) {
-                assert(loop_type == xm_sample_loop_type_forward);
-                s.loop(samp_hdr.loop_start, samp_hdr.loop_length);
+                s.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
             }
         }
     }

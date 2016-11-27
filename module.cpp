@@ -268,7 +268,7 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
         mod.instruments.push_back(module_instrument{volume, sample{data, static_cast<float>(c2spd), name}});
         if (sample_flags & 1) {
             assert(loop_start <= loop_end);
-            mod.instruments.back().samp.loop(loop_start, loop_end - loop_start);
+            mod.instruments.back().samp.loop(loop_start, loop_end - loop_start, loop_type::forward);
         }
     }
 
@@ -492,16 +492,10 @@ void load_mod(std::istream& in, const char* filename, module& mod)
 
         mod.instruments.push_back(module_instrument{s.volume, sample{data, amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}});
         if (s.loop_length > 2) {
-            mod.instruments.back().samp.loop(s.loop_start, s.loop_length);
+            mod.instruments.back().samp.loop(s.loop_start, s.loop_length, loop_type::forward);
         }
 
         assert(in);
-    }
-
-    const auto p = in.tellg();
-    in.seekg(0, std::ios::end);
-    if (!in || in.tellg() != p) {
-        throw std::runtime_error("Couldn't read module " + std::string(filename));
     }
 }
 

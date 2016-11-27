@@ -78,7 +78,13 @@ private:
         if (module_ && index >= 0 && index < sample_max()) {
             const auto& s = get_sample(index);
             sample_wnd_.set_sample(&s);
-            wss << std::setw(2) << index+1 << ": " << s.length() << " - \"" << s.name().c_str() << "\"\n";
+            wss << std::setw(2) << index+1 << ": " << s.length() << " - \"" << s.name().c_str() << "\" ";
+            switch (s.loop_type()){
+            case loop_type::none: wss << "no loop"; break;
+            case loop_type::forward: wss << "forward loop"; break;
+            case loop_type::pingpong: wss << "pingpong loop"; break;
+            default: assert(false);
+            }
             sample_index_ = index;
         } else {
             sample_wnd_.set_sample(nullptr);
