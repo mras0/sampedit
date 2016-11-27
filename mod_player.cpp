@@ -39,7 +39,7 @@ protected:
             wprintf(L"Warning: No sample. Ignoring trig offset %d\n", offset);
             return;
         }
-        auto& s = instrument().samp;
+        auto& s = sample().data();
         if (s.length()) {
             set_voice_volume();
             voice_.play(s, std::min(s.length(), offset));
@@ -59,7 +59,7 @@ protected:
         if (!instrument_number()) {
             return;
         }
-        fadeout_volume_ = std::max(0, fadeout_volume_ - instrument().volume_fadeout);
+        fadeout_volume_ = std::max(0, fadeout_volume_ - instrument().volume_fadeout());
         set_voice_volume();
     }
 
@@ -90,7 +90,7 @@ protected:
     void instrument_number(int inst) {
         assert(inst >= 1 && inst <= mod().instruments.size());
         instrument_ = inst;
-        volume(instrument().volume);
+        volume(sample().default_volume());
     }
 
     int instrument_number() const {
@@ -100,6 +100,10 @@ protected:
     const module_instrument& instrument() const {
         assert(instrument_ >= 1 && instrument_ <= mod().instruments.size());
         return mod().instruments[instrument_ - 1];
+    }
+
+    const module_sample& sample() const {
+        return instrument().samp();
     }
 
     //
@@ -226,7 +230,7 @@ private:
             wprintf(L"Warning: No sample. Ignoring period %d\n", period);
             return;
         }
-        auto& s = instrument().samp;
+        auto& s = sample().data();
         const int adjusted_period = static_cast<int>(0.5 + period * amiga_c5_rate / s.c5_rate());
         voice_.freq(mod().period_to_freq(adjusted_period));
     
@@ -870,7 +874,7 @@ public:
                 return;
             }
             const int effect_type = note.effect >> 8;
-            const int period = mod().note_to_period(note.note + instrument().relative_note);
+            const int period = mod().note_to_period(note.note + sample().relative_note());
             if (effect_type == 3 || effect_type == 5) {
                 set_porta_target(period);
             } else {

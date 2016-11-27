@@ -346,7 +346,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
         wprintf(L"%2.2d: %22.22S\n", ins, ins_hdr.name);
 
         if (!ins_hdr.num_samples) {
-            mod.instruments.push_back(module_instrument{0, sample{std::vector<float>{}, amiga_c5_rate, ""}});
+            mod.instruments.push_back(module_instrument{module_sample{sample{std::vector<float>{}, amiga_c5_rate, ""}, 0}});
             continue;
         }
 
@@ -396,12 +396,10 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             std::string name = std::string(samp_hdr.name, samp_hdr.name + sizeof(samp_hdr.name));
             sanitize(name);
 
-            mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.finetune/128.0f), name}});
+            mod.instruments.push_back(module_instrument{module_sample{sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.finetune/128.0f), name}, samp_hdr.volume, samp_hdr.relative_note}, ins_hdr.volume_fadeout});
             auto& mod_ins = mod.instruments.back();
-            mod_ins.volume_fadeout = ins_hdr.volume_fadeout;
-            mod_ins.relative_note  = samp_hdr.relative_note;
             if (loop_type) {
-                mod_ins.samp.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
+                mod_ins.samp().data().loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
             }
         }
     }

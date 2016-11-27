@@ -48,20 +48,20 @@ private:
         wss << std::setfill(L'0') << std::uppercase;
         for (size_t i = 0; i < mod_->instruments.size(); ++i) {
             const auto& inst = mod_->instruments[i];
+            const auto& s = inst.samp();
             wss << std::dec << std::setw(2) << (i+1) << " \t";
-            wss << std::hex << std::setw(2) << inst.volume << " \t\t";
+            wss << std::hex << std::setw(2) << s.default_volume() << " \t\t";
             if (mod_->type == module_type::xm) {
-                wss << std::hex << std::setw(4) << inst.volume_fadeout << " \t\t";
-                wss << std::dec << std::setw(2) << inst.relative_note << " \t\t";
+                wss << std::hex << std::setw(4) << inst.volume_fadeout() << " \t\t";
+                wss << std::dec << std::setw(2) << s.relative_note() << " \t\t";
             }
             wss << std::dec;
             constexpr int len_w = 8;
-            const auto& s = inst.samp;
-            wss << std::setfill(L' ') << std::setw(5) << std::dec << static_cast<int>(0.5f+inst.c5_rate()) << std::setfill(L'0') << " \t\t";
-            wss << std::setw(len_w) << std::hex << s.length() << " \t";
-            wss << std::setw(len_w) << s.loop_start() << " \t";
-            wss << std::setw(len_w) << s.loop_length() << " \t";
-            wss << s.name().c_str() << "\n";
+            wss << std::setfill(L' ') << std::setw(5) << std::dec << static_cast<int>(0.5f+s.adjusted_c5_rate()) << std::setfill(L'0') << " \t\t";
+            wss << std::setw(len_w) << std::hex << s.data().length() << " \t";
+            wss << std::setw(len_w) << s.data().loop_start() << " \t";
+            wss << std::setw(len_w) << s.data().loop_length() << " \t";
+            wss << s.data().name().c_str() << "\n";
         }
         SetWindowText(info_label_wnd_, wss.str().c_str());
     }

@@ -70,7 +70,7 @@ private:
 
     const sample& get_sample(int index) const {
         assert(module_ && index >= 0 && index < sample_max());
-        return module_->instruments[index].samp;
+        return module_->instruments[index].samp().data();
     }
 
     void select_sample(int index) {

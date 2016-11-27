@@ -246,7 +246,7 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
         s3m_seek(in, instrument_pointers[i]);
         const uint8_t type = read_le_u8(in);
         if (type == 0) {
-            mod.instruments.push_back(module_instrument{0, sample{std::vector<float>{}, 1.0f, ""}});
+            mod.instruments.push_back(module_instrument{module_sample{sample{std::vector<float>{}, 1.0f, ""}, 0}});
             continue;
         }
         assert(type == 1); // 1 = instrument
@@ -282,10 +282,10 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
             in.read(reinterpret_cast<char*>(&data[0]), length);
         }
 
-        mod.instruments.push_back(module_instrument{volume, sample{data, static_cast<float>(c2spd), name}});
+        mod.instruments.push_back(module_instrument{module_sample{sample{data, static_cast<float>(c2spd), name}, volume}});
         if (sample_flags & 1) {
             assert(loop_start <= loop_end);
-            mod.instruments.back().samp.loop(loop_start, loop_end - loop_start, loop_type::forward);
+            mod.instruments.back().samp().data().loop(loop_start, loop_end - loop_start, loop_type::forward);
         }
     }
 
@@ -507,9 +507,9 @@ void load_mod(std::istream& in, const char* filename, module& mod)
             in.read(reinterpret_cast<char*>(&data[0]), s.length);
         }
 
-        mod.instruments.push_back(module_instrument{s.volume, sample{data, amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}});
+        mod.instruments.push_back(module_instrument{module_sample{sample{data, amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}, s.volume}});
         if (s.loop_length > 2) {
-            mod.instruments.back().samp.loop(s.loop_start, s.loop_length, loop_type::forward);
+            mod.instruments.back().samp().data().loop(s.loop_start, s.loop_length, loop_type::forward);
         }
 
         assert(in);

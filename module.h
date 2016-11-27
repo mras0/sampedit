@@ -52,19 +52,39 @@ inline volume_command operator+(volume_command l, int r) {
 constexpr float amiga_clock_rate     = 7159090.5f;
 constexpr float amiga_c5_rate        = amiga_clock_rate / (2 * 428);
 
+class module_sample {
+public:
+    explicit module_sample(sample&& samp, int volume, int relative_note = 0) : sample_(samp), volume_(volume), relative_note_(relative_note) {
+    }
+
+    sample& data() { return sample_; }
+    const sample& data() const { return sample_; }
+
+    int default_volume() const { return volume_; }
+    int relative_note() const { return relative_note_; }
+
+    float adjusted_c5_rate() const {
+        return sample_.c5_rate()*note_difference_to_scale(static_cast<float>(relative_note_));
+    }
+
+private:
+    sample  sample_;
+    int     volume_;
+    int     relative_note_;
+};
+
 class module_instrument {
 public:
-    explicit module_instrument(int volume, sample&& samp) : volume(volume), samp(samp) {
+    explicit module_instrument(module_sample&& samp, int volume_fadeout = 0) : sample_(std::move(samp)), volume_fadeout_(volume_fadeout) {
     }
+    
+    module_sample& samp() { return sample_; }
+    const module_sample& samp() const { return sample_; }
+    int volume_fadeout() const { return volume_fadeout_; }
 
-    float c5_rate() const {
-        return samp.c5_rate()*note_difference_to_scale(static_cast<float>(relative_note));
-    }
-
-    int    volume;
-    int    volume_fadeout = 0;
-    int    relative_note  = 0;
-    sample samp;
+private:
+    module_sample sample_;
+    int           volume_fadeout_;
 };
 
 struct module_note {
