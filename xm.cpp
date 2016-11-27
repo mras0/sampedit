@@ -137,7 +137,7 @@ module_note convert_note(const xm_note& n) {
     module_note res;
     res.note       = convert_xm_note_key(n.note);
     res.instrument = n.instrument;
-    res.volume     = n.volume;
+    res.volume     = static_cast<volume_command>(n.volume);
     res.effect     = (n.effect_type<<8) | n.effect_param;
     return res;
 }

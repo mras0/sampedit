@@ -334,9 +334,9 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
                 assert(rd.instrument <= num_instruments);
             }
             if (b & 0x40) {
-                rd.volume = read_le_u8(in);
-                assert(rd.volume <= 64);
-                rd.volume += volume_byte_offset;
+                int vol = read_le_u8(in);
+                assert(vol <= 64);
+                rd.volume = volume_command::set_00 + vol;
             }
             if (b & 0x80) {
                 const uint8_t effect       = read_le_u8(in);
@@ -472,7 +472,7 @@ void load_mod(std::istream& in, const char* filename, module& mod)
                 n.instrument = (b[0]&0xf0) | (b[2]>>4);
                 const int period = ((b[0]&0x0f) << 8) | b[1];
                 n.effect = ((b[2] & 0x0f) << 8) | b[3];
-                n.volume = 0;
+                n.volume = volume_command::none;
                 n.note   = period_to_piano_key(period);
                 //if (period) {
                 //    const float freq = piano_key_to_freq(n.note, piano_key::C_5, 8363);

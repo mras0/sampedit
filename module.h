@@ -7,7 +7,25 @@
 #include <base/sample.h>
 #include <base/note.h>
 
-constexpr uint8_t volume_byte_offset = 0x10;
+// Matches XM format
+enum class volume_command : uint8_t {
+    none   = 0x00,
+    set_00 = 0x10,
+    set_40 = 0x50,
+    pan_0  = 0xc0,
+    pan_f  = 0xcf,
+};
+
+inline int operator-(volume_command l, volume_command r) {
+    assert(l >= r);
+    return static_cast<int>(l) - static_cast<int>(r);
+}
+
+inline volume_command operator+(volume_command l, int r) {
+    assert(static_cast<int>(l) + r <= 255);
+    return static_cast<volume_command>(static_cast<int>(l) + r);
+}
+
 constexpr float amiga_clock_rate     = 7159090.5f;
 constexpr float amiga_c5_rate        = amiga_clock_rate / (2 * 428);
 
@@ -17,10 +35,10 @@ struct module_instrument {
 };
 
 struct module_note {
-    piano_key  note        = piano_key::NONE;
-    uint8_t    instrument  = 0;
-    uint8_t    volume      = 0;
-    uint16_t   effect      = 0;
+    piano_key         note        = piano_key::NONE;
+    uint8_t           instrument  = 0;
+    volume_command    volume      = volume_command::none;
+    uint16_t          effect      = 0;
 };
 
 enum class module_type { mod, s3m, xm };

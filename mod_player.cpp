@@ -26,11 +26,6 @@ protected:
     void do_pattern_loop(int x);
 
     //
-    // Misc
-    //
-    sample_voice& mix_chan() { return voice_; }
-
-    //
     // Trig
     //
     void trig(int offset) {
@@ -41,7 +36,7 @@ protected:
         }
         auto& s = instrument().samp;
         if (s.length()) {
-            mix_chan().play(s, std::min(s.length(), offset));
+            voice_.play(s, std::min(s.length(), offset));
         }
     }
 
@@ -65,6 +60,14 @@ protected:
         } else if (y > 0) {
             do_volume_slide(-y);
         }
+    }
+
+    //
+    // Panning
+    //
+    void pan(int amount) {
+        assert(amount >= 0 && amount <= 255);
+        voice_.pan(amount / 255.0f);
     }
 
     //
@@ -491,7 +494,7 @@ public:
                 }
             }
         }
-        assert(note.volume == 0);
+        assert(note.volume == volume_command::none);
     }
 
     virtual void process_effect(int tick, int effect) override {
@@ -661,10 +664,9 @@ public:
                 trig(offset);
             }
         }
-        if (note.volume) {
-            const int vol = note.volume - volume_byte_offset;
-            assert(vol >= 0 && vol <= mod_player::max_volume);
-            volume(vol);
+        if (note.volume != volume_command::none) {
+            assert(note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40);
+            volume(note.volume - volume_command::set_00);
         }
     }
 
@@ -747,7 +749,7 @@ public:
             switch(x) {
             case 0x8: // Pan position
                 if (!tick) {
-                    mix_chan().pan((y<<4) / 255.0f);
+                    pan(y << 4);
                 }
                 break;
             case 0xB: // Pattern Loop
@@ -853,10 +855,14 @@ public:
                 }
             }
         }
-        if (note.volume) {
-            const int vol = note.volume - volume_byte_offset;
-            assert(vol >= 0 && vol <= mod_player::max_volume);
-            volume(vol);
+        if (note.volume != volume_command::none) {
+            if (note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40) {
+                volume(note.volume - volume_command::set_00);
+            } else if (note.volume >= volume_command::pan_0 && note.volume <= volume_command::pan_f) {
+                pan((note.volume - volume_command::pan_0) << 4);
+            } else {
+                wprintf(L"%2.2d: Ignoring volume command %02X\n", current_position().row, static_cast<int>(note.volume));
+            }
         }
     }
     virtual void process_effect(int tick, int effect) override {
@@ -884,6 +890,24 @@ public:
             if (tick) {
                 do_porta_to_note();
             }
+            return;
+        case 0x4: // 4xy Vibrato
+            do_vibrato(tick, x, y);
+            return;
+        case 0x5: // 5xy Porta + Voume slide (5xy = 300 + Axy)
+            if (tick) {
+                do_porta_to_note();
+                do_volume_slide(x, y);
+            }
+            return;
+        case 0x6: // 6xy Vibrato + Volume slide (6xy = 400 + Axy)
+            if (tick) {
+                do_vibrato(tick, 0, 0);
+                do_volume_slide(x, y);
+            }
+            return;
+        case 0x8: // 8xy Set pan
+            pan(xy);
             return;
         case 0x9: // 9xy Sample offset
             break;

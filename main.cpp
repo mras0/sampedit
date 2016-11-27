@@ -75,7 +75,7 @@ private:
     }
 
     virtual std::vector<int> do_column_widths() const override {
-        return std::vector<int>(mod_.num_channels, mod_.type == module_type::mod ? 10 : 14);
+        return std::vector<int>(mod_.num_channels, mod_.type == module_type::mod ? 10 : 13);
     }
 
     virtual std::string do_cell_value(int row, int column) const override {
@@ -95,12 +95,15 @@ private:
             ss << ".. ";
         }
         if (mod_.type != module_type::mod) {
-            if (note.volume) {
-                int volume = note.volume - volume_byte_offset;
-                assert(volume >= 0 && volume <= mod_player::max_volume);
-                ss << 'v' << std::setw(2) << (int)volume << ' ';
+            if (note.volume != volume_command::none) {
+                int vol = static_cast<int>(note.volume);
+                if (mod_.type == module_type::s3m) {
+                    assert(note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40);
+                    vol -= static_cast<int>(volume_command::set_00);
+                }
+                ss << std::setw(2) << (int)vol << ' ';
             } else {
-                ss << "... ";
+                ss << ".. ";
             }
         }
         if (note.effect) {
