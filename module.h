@@ -57,8 +57,13 @@ public:
     explicit module_instrument(int volume, sample&& samp) : volume(volume), samp(samp) {
     }
 
+    float c5_rate() const {
+        return samp.c5_rate()*note_difference_to_scale(static_cast<float>(relative_note));
+    }
+
     int    volume;
     int    volume_fadeout = 0;
+    int    relative_note  = 0;
     sample samp;
 };
 

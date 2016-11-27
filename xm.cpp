@@ -390,11 +390,12 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             std::string name = std::string(samp_hdr.name, samp_hdr.name + sizeof(samp_hdr.name));
             sanitize(name);
 
-            mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.relative_note + samp_hdr.finetune/128.0f), name}});
-            auto& ins = mod.instruments.back();
-            ins.volume_fadeout = ins_hdr.volume_fadeout;
+            mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.finetune/128.0f), name}});
+            auto& mod_ins = mod.instruments.back();
+            mod_ins.volume_fadeout = ins_hdr.volume_fadeout;
+            mod_ins.relative_note  = samp_hdr.relative_note;
             if (loop_type) {
-                ins.samp.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
+                mod_ins.samp.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
             }
         }
     }

@@ -40,20 +40,27 @@ private:
         assert(mod_);
         std::wstringstream wss;
         wss << mod_->num_channels << " channel " << module_type_name[static_cast<int>(mod_->type)] << " module name: " << mod_->name.c_str() << ", initial speed " << mod_->initial_speed << ", initial tempo " << mod_->initial_tempo << "\n";
+        wss << "# \tVolume \t";
+        if (mod_->type == module_type::xm) {
+            wss << "Fadeout \tRelNote \t";
+        }
+        wss << "C5Rate \tLength \tLoop \t\tEnd \tName\n";
         wss << std::setfill(L'0') << std::uppercase;
         for (size_t i = 0; i < mod_->instruments.size(); ++i) {
             const auto& inst = mod_->instruments[i];
-            wss << "Instrument " << std::dec << std::setw(2) << (i+1) << " \t";
-            wss << "Volume " << std::hex << std::setw(2) << inst.volume << " \t";
+            wss << std::dec << std::setw(2) << (i+1) << " \t";
+            wss << std::hex << std::setw(2) << inst.volume << " \t\t";
             if (mod_->type == module_type::xm) {
-                wss << "Fadeout " << std::hex << std::setw(4) << inst.volume_fadeout << " \t";
+                wss << std::hex << std::setw(4) << inst.volume_fadeout << " \t\t";
+                wss << std::dec << std::setw(2) << inst.relative_note << " \t\t";
             }
             wss << std::dec;
             constexpr int len_w = 8;
             const auto& s = inst.samp;
-            wss << "C5Rate " << std::setfill(L' ') << std::setw(5) << static_cast<int>(0.5+s.c5_rate()) << std::setfill(L'0');
-            wss << " \tLength \t" << std::setw(len_w) << s.length() << " \t";
-            wss << "Loop: \tStart = " << std::setw(len_w) << s.loop_start() << " \tLength = " << std::setw(len_w) << s.loop_length() << " \t";
+            wss << std::setfill(L' ') << std::setw(5) << std::dec << static_cast<int>(0.5f+inst.c5_rate()) << std::setfill(L'0') << " \t\t";
+            wss << std::setw(len_w) << std::hex << s.length() << " \t";
+            wss << std::setw(len_w) << s.loop_start() << " \t";
+            wss << std::setw(len_w) << s.loop_length() << " \t";
             wss << s.name().c_str() << "\n";
         }
         SetWindowText(info_label_wnd_, wss.str().c_str());

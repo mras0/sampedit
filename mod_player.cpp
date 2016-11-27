@@ -256,7 +256,7 @@ public:
             for (auto& v : voices_) {
                 mixer_.add_voice(v);
             }
-            mixer_.global_volume(1.0f/mod_.num_channels);
+            mixer_.global_volume(2.0f/mod_.num_channels);
         });
     }
 
@@ -870,7 +870,7 @@ public:
                 return;
             }
             const int effect_type = note.effect >> 8;
-            const int period = mod().note_to_period(note.note);
+            const int period = mod().note_to_period(note.note + instrument().relative_note);
             if (effect_type == 3 || effect_type == 5) {
                 set_porta_target(period);
             } else {

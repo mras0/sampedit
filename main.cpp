@@ -166,8 +166,9 @@ int main(int argc, char* argv[])
             auto& mod = mod_player_->mod();
             wprintf(L"Loaded '%S' - '%S' %d channels\n", argv[1], mod.name.c_str(), mod.num_channels);
             for (size_t i = 0; i < mod.instruments.size(); ++i) {
-                const auto& s = mod.instruments[i].samp;
-                wprintf(L"%2.2d: %-28S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(s.c5_rate()+0.5f));
+                const auto& ins = mod.instruments[i];
+                const auto& s = ins.samp;
+                wprintf(L"%2.2d: %-28S c5 rate: %d\n", (int)(i+1), s.name().c_str(), (int)(0.5+ins.c5_rate()));
             }
             mod_ = &mod;
             grid.reset(new mod_grid{mod});

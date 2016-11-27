@@ -21,7 +21,7 @@ std::string piano_key_to_string(piano_key n)
     const int val    = static_cast<int>(n);
     const int octave = val/12;
     const int note   = val%12;
-    assert(octave >= 0 && octave < 9);
+    assert(octave >= 0 && octave <= 9);
     static const char* const note_names[12] ={"C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"};
     return note_names[note] + std::to_string(octave);
 }
