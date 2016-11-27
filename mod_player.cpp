@@ -2,11 +2,15 @@
 #include "mixer.h"
 #include <base/sample_voice.h>
 
+constexpr bool is_mod_note_delay(int effect) {
+    return effect>>4 == 0xED;
+}
+
 class channel_base {
 public:
     virtual ~channel_base() {}
     virtual void process_note(const module_note& note) = 0;
-    virtual void process_effect(int tick, int effect) = 0;
+    virtual void process_effect(int tick, const module_note& note) = 0;
 
 protected:
     explicit channel_base(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) : player_(player), voice_(voice) {
@@ -155,6 +159,39 @@ protected:
         if (vib_pos_ > 31) vib_pos_ -= 64;
     }
 
+    void do_retrig_and_volume_slide(int tick, int xy) {
+        if (xy) {
+            last_retrig_ = xy;
+        }
+
+        const int interval = last_retrig_ & 0xf;
+        if (!interval) return;
+
+        if (tick && tick % interval == 0) {
+            int new_vol = volume();
+            switch (last_retrig_ >> 4) {
+            case 0x0: break;
+            case 0x1: new_vol -= 1; break;
+            case 0x2: new_vol -= 2; break;
+            case 0x3: new_vol -= 4; break;
+            case 0x4: new_vol -= 8; break;
+            case 0x5: new_vol -= 16; break;
+            case 0x6: new_vol = new_vol*2/3; break;
+            case 0x7: new_vol /= 2; break;
+            case 0x8: break;
+            case 0x9: new_vol += 1; break;
+            case 0xA: new_vol += 2; break;
+            case 0xB: new_vol += 4; break;
+            case 0xC: new_vol += 8; break;
+            case 0xD: new_vol += 16; break;
+            case 0xE: new_vol = new_vol*3/2; break;
+            case 0xF: new_vol *= 2; break;
+            }
+            volume(new_vol);
+            trig(0);
+        }
+    }
+
 private:
     mod_player::impl&   player_;
     sample_voice&       voice_;
@@ -162,12 +199,13 @@ private:
     int                 instrument_ = 0;
     int                 period_ = 0;
 
-    // Effect parameters
+    // Effect memory
     int                 porta_target_period_ = 0;
     int                 porta_speed_ = 0;
     int                 vib_depth_ = 0;
     int                 vib_speed_ = 0;
     int                 vib_pos_   = 0;
+    int                 last_retrig_ = 0;
 
     void set_voice_period(int period) {
         assert(period > 0);
@@ -191,7 +229,7 @@ public:
         }
         for (int i = 0; i < mod_.num_channels; ++i) {
             channels_.emplace_back(make_channel(*this, voices_[i], static_cast<uint8_t>(mod_.channel_default_pan(i))));
-            wprintf(L"%2d: Pan %d\n", i+1, mod_.channel_default_pan(i));
+            if (mod_.type == module_type::s3m) wprintf(L"%2d: Pan %d\n", i+1, mod_.channel_default_pan(i));
         }
         mixer_.tick_queue().post([this] {
             set_speed(mod_.initial_speed);
@@ -305,9 +343,7 @@ private:
         for (int ch = 0; ch < mod_.num_channels; ++ch) {
             auto& channel = channels_[ch];
             const auto& note = mod_.at(order_, row_)[ch];
-            if (note.effect) {
-                channel->process_effect(tick_, note.effect);
-            }
+            channel->process_effect(tick_, note);
         }
     }
 
@@ -483,7 +519,7 @@ public:
             } else {
                 set_period(period);
 
-                if (note.effect>>4 != 0xED) {
+                if (!is_mod_note_delay(note.effect)) {
                     int offset = 0;
                     if (effect == 9) {
                         offset = (note.effect & 0xff) << 8;
@@ -497,8 +533,10 @@ public:
         assert(note.volume == volume_command::none);
     }
 
-    virtual void process_effect(int tick, int effect) override {
-        assert(effect);
+    virtual void process_effect(int tick, const module_note& note) override {
+        const int effect = note.effect;
+        if (!effect) return;
+
         const int xy = effect&0xff;
         const int x  = xy>>4;
         const int y  = xy&0xf;
@@ -670,7 +708,10 @@ public:
         }
     }
 
-    virtual void process_effect(int tick, int effect) override {
+    virtual void process_effect(int tick, const module_note& note) override {
+        const int effect = note.effect;
+        if (!effect) return;
+
         const char effchar = static_cast<char>((effect>>8)-1+'A');
         const int xy = effect&0xff;
         const int x = xy >> 4;
@@ -699,7 +740,7 @@ public:
             do_s3m_porta(tick, -1, xy);
             break;
         case 'H': // Vibrato
-            do_vibrato(tick, x, y);
+            do_vibrato(tick, x, y); // TODO: y * 4?
             break;
         case 'J': // Arpeggio
             do_arpeggio(tick, x, y);
@@ -716,34 +757,8 @@ public:
             break;
         case 'O': // Oxy Sample offset
             break;
-        case 'Q': // Qxy (Retrig + Volume Slide)                
-            if (xy) {
-                assert(y);
-                last_retrig_ = xy;
-            }
-            if (tick && tick % (last_retrig_&0xf) == 0) {
-                int new_vol = volume();
-                switch (last_retrig_ >> 4) {
-                case 0x0: break;
-                case 0x1: new_vol -= 1; break;
-                case 0x2: new_vol -= 2; break;
-                case 0x3: new_vol -= 4; break;
-                case 0x4: new_vol -= 8; break;
-                case 0x5: new_vol -= 16; break;
-                case 0x6: new_vol = new_vol*2/3; break;
-                case 0x7: new_vol /= 2; break;
-                case 0x8: break;
-                case 0x9: new_vol += 1; break;
-                case 0xA: new_vol += 2; break;
-                case 0xB: new_vol += 4; break;
-                case 0xC: new_vol += 8; break;
-                case 0xD: new_vol += 16; break;
-                case 0xE: new_vol = new_vol*3/2; break;
-                case 0xF: new_vol *= 2; break;
-                }
-                volume(new_vol);
-                trig(0);
-            }
+        case 'Q': // Qxy (Retrig + Volume Slide)
+            do_retrig_and_volume_slide(tick, xy);
             break;
         case 'S':
             switch(x) {
@@ -783,7 +798,6 @@ public:
 private:
     int  sample_offset_ = 0;
     int  last_vol_slide_ = 0;
-    int  last_retrig_ = 0;
 
     void do_s3m_volume_slide(int tick, int xy) {
         if (xy) last_vol_slide_ = xy;
@@ -844,7 +858,7 @@ public:
             } else {
                 set_period(period);
 
-                if (note.effect>>4 != 0xED) {
+                if (!is_mod_note_delay(note.effect)) {
                     int offset = 0;
                     if (effect_type == 9) {
                         offset = (note.effect & 0xff) << 8;
@@ -855,17 +869,13 @@ public:
                 }
             }
         }
-        if (note.volume != volume_command::none) {
-            if (note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40) {
-                volume(note.volume - volume_command::set_00);
-            } else if (note.volume >= volume_command::pan_0 && note.volume <= volume_command::pan_f) {
-                pan((note.volume - volume_command::pan_0) << 4);
-            } else {
-                wprintf(L"%2.2d: Ignoring volume command %02X\n", current_position().row, static_cast<int>(note.volume));
-            }
-        }
     }
-    virtual void process_effect(int tick, int effect) override {
+
+    virtual void process_effect(int tick, const module_note& note) override {
+        process_xm_volume_command(tick, note);
+
+        const int effect      = note.effect;
+        if (!effect) return;
         const int effect_type = effect >> 8;
         const int xy          = effect & 0xff;
         const int x           = xy >> 4;
@@ -877,22 +887,22 @@ public:
             return;
         case 0x01: // 1xy Porta down
             if (tick) {
-                do_porta(-xy);
+                do_porta(-xy * 4);
             }
             return;
         case 0x02: // 2xy Porta down
             if (tick) {
-                do_porta(+xy);
+                do_porta(+xy * 4);
             }
             return;
         case 0x3: // 3xy Porta to note
-            if (xy) porta_speed(xy);
+            if (xy) porta_speed(xy * 4);
             if (tick) {
                 do_porta_to_note();
             }
             return;
         case 0x4: // 4xy Vibrato
-            do_vibrato(tick, x, y);
+            do_vibrato(tick, x, y * 4);
             return;
         case 0x5: // 5xy Porta + Voume slide (5xy = 300 + Axy)
             if (tick) {
@@ -930,6 +940,11 @@ public:
             switch (x) {
             case 0x0: // E0y Set fiter
                 return;
+            case 0x6: // E6y Pattern loop
+                if (!tick) {
+                    do_pattern_loop(y);
+                }
+                return;
             case 0x9: // E9x Retrig note
                 assert(y);
                 if (tick && tick % y == 0) {
@@ -949,6 +964,11 @@ public:
             case 0xD: // EDy Delay note
                 if (tick == y) {
                     trig(0);
+                    if (note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40) {
+                        volume(note.volume - volume_command::set_00);
+                    } else {
+                        assert(note.volume == volume_command::none); // Not implemented
+                    }
                 }
                 return;
             default:
@@ -965,6 +985,9 @@ public:
                 do_set_tempo(xy);
             }
             return;
+        case 'R'-'A'+10: // Rxy Multi retrig
+            do_retrig_and_volume_slide(tick, xy);
+            break;
         case 'W'-'A'+10: // Wxy Sync?
             break;
         default:
@@ -975,6 +998,26 @@ public:
     }
 private:
     int  sample_offset_ = 0;
+
+    void process_xm_volume_command(int tick, const module_note& note) {
+        if (note.volume == volume_command::none) {
+            // Nothing to do
+        } else if (note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40) {
+            if (!tick && !is_mod_note_delay(note.effect)) volume(note.volume - volume_command::set_00);
+        } else if (note.volume >= volume_command::slide_down_0 && note.volume <= volume_command::slide_down_f) {
+            do_volume_slide(-(note.volume - volume_command::slide_down_0));
+        } else if (note.volume >= volume_command::slide_up_0 && note.volume <= volume_command::slide_up_f) {
+            do_volume_slide(note.volume - volume_command::slide_up_0);
+        } else if (note.volume >= volume_command::fine_slide_down_0 && note.volume <= volume_command::fine_slide_down_f) {
+            if (!tick) do_volume_slide(-(note.volume - volume_command::fine_slide_down_0));
+        } else if (note.volume >= volume_command::fine_slide_up_0 && note.volume <= volume_command::fine_slide_up_f) {
+            if (!tick) do_volume_slide(note.volume - volume_command::fine_slide_up_0);
+        } else if (note.volume >= volume_command::pan_0 && note.volume <= volume_command::pan_f) {
+            if (!tick) pan((note.volume - volume_command::pan_0) << 4);
+        } else {
+            wprintf(L"%2.2d: Ignoring volume command %02X\n", current_position().row, static_cast<int>(note.volume));
+        }
+    }
 };
 
 std::unique_ptr<channel_base> make_channel(mod_player::impl& player, sample_voice& voice, uint8_t default_pan) {

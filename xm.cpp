@@ -130,7 +130,7 @@ piano_key convert_xm_note_key(uint8_t n) {
     if (!n) return piano_key::NONE;
     if (n == 97) return piano_key::OFF;
     assert(n >= 1 && n < 97);
-    return piano_key::C_0 + 12 * (1 + (n-1) / 12) + (n-1) % 12;
+    return piano_key::C_0 + 12 * (xm_octave_offset + (n-1) / 12) + (n-1) % 12;
 }
 
 module_note convert_note(const xm_note& n) {
@@ -340,7 +340,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
         wprintf(L"%2.2d: %22.22S\n", ins, ins_hdr.name);
 
         if (!ins_hdr.num_samples) {
-            mod.instruments.push_back(module_instrument{0, sample{std::vector<float>{}, 1.0f, ""}});
+            mod.instruments.push_back(module_instrument{0, sample{std::vector<float>{}, amiga_c5_rate, ""}});
             continue;
         }
 
@@ -349,7 +349,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             xm_sample_header samp_hdr;
             get(in, samp_hdr);
             const int loop_type = samp_hdr.type & xm_sample_type_loop_mask;
-            const bool is_16bit = samp_hdr.type & xm_sample_type_16bit_mask;
+            const bool is_16bit = (samp_hdr.type & xm_sample_type_16bit_mask) != 0;
 
             wprintf(L"  %2.2d: %22.22S len %6d type %02X ", samp, samp_hdr.name, samp_hdr.length, samp_hdr.type);
             if (loop_type) wprintf(L"Loop %6d %6d ", samp_hdr.loop_start, samp_hdr.loop_length);
@@ -358,7 +358,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             short last = 0;
             std::vector<short> sample_data(samp_hdr.length);
             const int len = is_16bit ? samp_hdr.length/2 : samp_hdr.length;
-            for (unsigned i = 0; i < len; ++i) {
+            for (int i = 0; i < len; ++i) {
                 short cur = 0;
                 if (is_16bit) {
                     cur = static_cast<short>(read_le_u16(in));
@@ -380,4 +380,6 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             }
         }
     }
+
+    wprintf(L"Using %S frequency table\n", mod.xm.use_linear_frequency ? "linear" : "amiga");
 }

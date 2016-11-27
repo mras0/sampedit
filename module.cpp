@@ -51,13 +51,19 @@ const module_note* module::at(int ord, int row) const
 int module::note_to_period(piano_key note) const
 {
     if (type == module_type::xm) {
-        assert(!xm.use_linear_frequency);
-        static_assert(static_cast<int>(piano_key::C_0) == 0, "");
-        //                                C-   C#   D-   D#   E-   F-   F#   G-   G-#  A-   A#   B-
-        const int xm_amiga_periods[12] = {907, 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480};
-        const int period = static_cast<int>(0.5f + xm_amiga_periods[static_cast<int>(note) % 12] * 16.0f / pow(2.0f, static_cast<int>(note) / 12 - 2));
-        //wprintf(L"Note %S -> %d (freq %f)\n", piano_key_to_string(note).c_str(), period, period_to_freq(period));
-        return period;
+        const int xm_note = static_cast<int>(note) - xm_octave_offset * 12;
+        if (xm.use_linear_frequency) {
+            const int period = (10*12*16*4 - xm_note*16*4/* - FineTune/2*/);
+            //wprintf(L"Note %S -> %d (freq %f)\n", piano_key_to_string(note).c_str(), period, period_to_freq(period));
+            return period;
+        } else {
+            static_assert(static_cast<int>(piano_key::C_0) == 0, "");
+            //                                C-   C#   D-   D#   E-   F-   F#   G-   G-#  A-   A#   B-
+            const int xm_amiga_periods[12] = {907, 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480};
+            const int period = static_cast<int>(0.5f + xm_amiga_periods[xm_note % 12] * 16.0f / pow(2.0f, xm_note / 12 - 1)); // The table is offset one octave...
+            //wprintf(L"Note %S -> %d (freq %f)\n", piano_key_to_string(note).c_str(), period, period_to_freq(period));
+            return period;
+        }
     }
 
     const int amiga_period = freq_to_amiga_period(piano_key_to_freq(note, piano_key::C_5, amiga_c5_rate));
@@ -76,8 +82,17 @@ int module::freq_to_period(float freq) const {
         return static_cast<int>(0.5+s3m_clock_rate / freq);
     } else {
         assert(type == module_type::xm);
-        assert(!xm.use_linear_frequency);
-        return static_cast<int>(0.5+xm_clock_rate / freq);
+        if (xm.use_linear_frequency) {
+            // F = 8363*pow(2.0f, (6*12*16*4 - static_cast<float>(period)) / (12*16*4))
+            // F/8363 = pow(2.0f, (6*12*16*4 - static_cast<float>(period)) / (12*16*4))
+            // log2(F/8363) = (6*12*16*4 - static_cast<float>(period)) / (12*16*4)
+            // log2(F/8363) * (12*16*4) = 6*12*16*4 - static_cast<float>(period)
+            // -(log2(F/8363) * (12*16*4) - 6*12*16*4)  = period
+            // 6*12*16*4 - log2(F/8363) * (12*16*4)  = period
+            return static_cast<int>(0.5+log2(freq/8363) * (12*16*4));
+        } else {
+            return static_cast<int>(0.5+xm_clock_rate / freq);
+        }
     }
 }
 
@@ -88,8 +103,7 @@ float module::period_to_freq(int period) const {
         return s3m_clock_rate / period;
     } else {
         assert(type == module_type::xm);
-        assert(!xm.use_linear_frequency);
-        return xm_clock_rate / period;
+        return xm.use_linear_frequency ? 8363*pow(2.0f, (6*12*16*4 - static_cast<float>(period)) / (12*16*4)) : xm_clock_rate / period;
     }
 }
 

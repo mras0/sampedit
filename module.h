@@ -7,13 +7,36 @@
 #include <base/sample.h>
 #include <base/note.h>
 
+    //0       Do nothing
+    //$10-$50   Set volume Value-$10
+    //:          :        :
+    //:          :        :
+    //$60-$6f   Volume slide down
+    //$70-$7f   Volume slide up
+    //$80-$8f   Fine volume slide down
+    //$90-$9f   Fine volume slide up
+    //$a0-$af   Set vibrato speed
+    //$b0-$bf   Vibrato
+    //$c0-$cf   Set panning
+    //$d0-$df   Panning slide left
+    //$e0-$ef   Panning slide right
+    //$f0-$ff   Tone porta
+
 // Matches XM format
 enum class volume_command : uint8_t {
-    none   = 0x00,
-    set_00 = 0x10,
-    set_40 = 0x50,
-    pan_0  = 0xc0,
-    pan_f  = 0xcf,
+    none              = 0x00,
+    set_00            = 0x10,
+    set_40            = 0x50,
+    slide_down_0      = 0x60,
+    slide_down_f      = 0x6f,
+    slide_up_0        = 0x70,
+    slide_up_f        = 0x7f,
+    fine_slide_down_0 = 0x80,
+    fine_slide_down_f = 0x8f,
+    fine_slide_up_0   = 0x90,
+    fine_slide_up_f   = 0x9f,
+    pan_0             = 0xc0,
+    pan_f             = 0xcf,
 };
 
 inline int operator-(volume_command l, volume_command r) {
@@ -47,6 +70,8 @@ constexpr const char* const module_type_name[] = { "MOD", "S3M", "XM" };
 struct module_position {
     int order, pattern, row;
 };
+
+constexpr int xm_octave_offset = 1;
 
 struct module {
     explicit module(module_type type) : type(type) {
