@@ -866,6 +866,9 @@ public:
         const int y           = xy & 0xf;
         assert(effect_type < 38);
         switch (effect_type) {
+        case 0x0: // 0xy Arpeggio
+            do_arpeggio(tick, x, y);
+            return;
         case 0x01: // 1xy Porta down
             if (tick) {
                 do_porta(-xy);
@@ -931,6 +934,8 @@ public:
                 do_set_tempo(xy);
             }
             return;
+        case 'W'-'A'+10: // Wxy Sync?
+            break;
         default:
             if (!tick) {
                 wprintf(L"%2.2d: Ignoring effect %c%02X\n", current_position().row, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[effect_type], xy);

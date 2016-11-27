@@ -72,9 +72,12 @@ int module::note_to_period(piano_key note) const
 int module::freq_to_period(float freq) const {
     if (type == module_type::mod) {
         return freq_to_amiga_period(freq);
-    } else {
-        assert(type == module_type::s3m);
+    } else if (type == module_type::s3m) {
         return static_cast<int>(0.5+s3m_clock_rate / freq);
+    } else {
+        assert(type == module_type::xm);
+        assert(!xm.use_linear_frequency);
+        return static_cast<int>(0.5+xm_clock_rate / freq);
     }
 }
 
