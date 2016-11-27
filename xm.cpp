@@ -210,8 +210,26 @@ void get(std::istream& in, xm_instrument_header& ins_hdr) {
 }
 
 bool check(xm_instrument_header& ins_hdr) {
-    // TODO
-    (void)ins_hdr;
+    // Instrument type is checked elsewhere
+    if (ins_hdr.num_samples) {
+        if (ins_hdr.header_length != 263) {
+            assert(false);
+            return false;
+        }
+        if (ins_hdr.sample_header_length != 40) {
+            assert(false);
+            return false;
+        }
+    } else {
+        if (ins_hdr.header_length != 33) {
+            assert(false);
+            return false;
+        }
+        if (ins_hdr.sample_header_length) {
+            assert(false);
+            return false;
+        }
+    }
     return true;
 }
 
@@ -309,12 +327,16 @@ void load_xm(std::istream& in, const char* filename, module& mod)
         assert(in.tellg() - pat_start == pat_hdr.data_size);
     }
 
+    int instrument_type = -1;
     for (unsigned ins = 0; ins < xm.num_instruments; ++ins) {
         xm_instrument_header ins_hdr;
         get(in, ins_hdr);
-        if (!check(ins_hdr)) {
+        if (!ins) instrument_type = ins_hdr.type; // The instrument type should be the same for all instruments (it should really just be zero, but isn't always)
+        if (!check(ins_hdr) || ins_hdr.type != instrument_type) {
+            assert(false);
             throw std::runtime_error("Invalid/Unsupported XM: " + std::string(filename) + " Instrument " + std::to_string(ins) + " is invalid");
         }
+
         wprintf(L"%2.2d: %22.22S\n", ins, ins_hdr.name);
 
         if (!ins_hdr.num_samples) {
@@ -326,13 +348,19 @@ void load_xm(std::istream& in, const char* filename, module& mod)
         for (unsigned samp = 0; samp < ins_hdr.num_samples; ++samp) {
             xm_sample_header samp_hdr;
             get(in, samp_hdr);
-            wprintf(L"  %2.2d: %22.22S\n", samp, samp_hdr.name);
+            const int loop_type = samp_hdr.type & xm_sample_type_loop_mask;
+            const bool is_16bit = samp_hdr.type & xm_sample_type_16bit_mask;
+
+            wprintf(L"  %2.2d: %22.22S len %6d type %02X ", samp, samp_hdr.name, samp_hdr.length, samp_hdr.type);
+            if (loop_type) wprintf(L"Loop %6d %6d ", samp_hdr.loop_start, samp_hdr.loop_length);
+            wprintf(L"\n");
 
             short last = 0;
             std::vector<short> sample_data(samp_hdr.length);
-            for (unsigned i = 0; i < samp_hdr.length; ++i) {
+            const int len = is_16bit ? samp_hdr.length/2 : samp_hdr.length;
+            for (unsigned i = 0; i < len; ++i) {
                 short cur = 0;
-                if (samp_hdr.type & xm_sample_type_16bit_mask) {
+                if (is_16bit) {
                     cur = static_cast<short>(read_le_u16(in));
                 } else {
                     cur = static_cast<short>(static_cast<signed char>(read_le_u8(in)) << 8);
@@ -347,7 +375,6 @@ void load_xm(std::istream& in, const char* filename, module& mod)
 
             mod.instruments.push_back(module_instrument{samp_hdr.volume, sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.relative_note + samp_hdr.finetune/128.0f), name}});
             auto& s = mod.instruments.back().samp;
-            const int loop_type = samp_hdr.type & xm_sample_type_loop_mask;
             if (loop_type) {
                 s.loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
             }

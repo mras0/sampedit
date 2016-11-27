@@ -101,7 +101,7 @@ private:
                     assert(note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40);
                     vol -= static_cast<int>(volume_command::set_00);
                 }
-                ss << std::setw(2) << (int)vol << ' ';
+                ss << std::setw(2) << std::hex << (int)vol << ' ';
             } else {
                 ss << ".. ";
             }
