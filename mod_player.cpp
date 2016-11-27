@@ -921,8 +921,15 @@ public:
                 volume(xy);
             }
             return;
+        case 0xD: // Dxy Pattern break
+            if (tick == 0) {
+                do_pattern_break(x*10 + y);
+            }
+            return;
         case 0xE:
             switch (x) {
+            case 0x0: // E0y Set fiter
+                return;
             case 0x9: // E9x Retrig note
                 assert(y);
                 if (tick && tick % y == 0) {
