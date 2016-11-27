@@ -70,11 +70,13 @@ void get(std::istream& in, xm_header& xm) {
     get(in, xm.order);
 }
 
+constexpr int xm_header_size = 276;
+
 bool check(const xm_header& xm) {
     return strncmp(xm.id, xm_signature, xm_signature_length) == 0
         && xm.escape == '\x1a'
         && xm.version == 0x0104
-        && xm.header_size == 276
+        && (xm.header_size == xm_header_size || xm.header_size == 275) // 275 seen in Lamb - In your arms.xm
         && xm.song_length <= 256
         && xm.num_channels <= 32
         && xm.num_patterns <= 256
@@ -283,6 +285,10 @@ void load_xm(std::istream& in, const char* filename, module& mod)
     if (!check(xm)) {
         assert(false);
         throw std::runtime_error("Invalid/Unsupported XM: " + std::string(filename));
+    }
+    assert((int)in.tellg() == 60+xm_header_size);
+    if (xm.header_size != xm_header_size) {
+        in.seekg(60+xm.header_size, std::ios_base::beg);
     }
 
     wprintf(L"Song name:    %20.20S\n", xm.name);

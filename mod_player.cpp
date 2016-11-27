@@ -982,6 +982,11 @@ public:
                     do_volume_slide(-y);
                 }
                 return;            
+            case 0xC: // ECy Cut note
+                if (tick == y) {
+                    volume(0);
+                }
+                return;
             case 0xD: // EDy Delay note
                 if (tick == y) {
                     trig(0);
