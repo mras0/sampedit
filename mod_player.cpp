@@ -90,7 +90,7 @@ protected:
     void instrument_number(int inst) {
         assert(inst >= 1 && inst <= mod().instruments.size());
         instrument_ = inst;
-        volume(sample().default_volume());
+        sample_     = nullptr;
     }
 
     int instrument_number() const {
@@ -102,8 +102,14 @@ protected:
         return mod().instruments[instrument_ - 1];
     }
 
+    void sample(const module_sample& sample) {
+        sample_ = &sample;
+        assert(&instrument().samp() == sample_);
+    }
+
     const module_sample& sample() const {
-        return instrument().samp();
+        assert(sample_);
+        return *sample_;
     }
 
     //
@@ -207,20 +213,21 @@ protected:
     }
 
 private:
-    mod_player::impl&   player_;
-    sample_voice&       voice_;
-    int                 volume_         = 0;
-    int                 fadeout_volume_ = 0;
-    int                 instrument_     = 0;
-    int                 period_         = 0;
+    mod_player::impl&       player_;
+    sample_voice&           voice_;
+    int                     volume_         = 0;
+    int                     fadeout_volume_ = 0;
+    int                     instrument_     = 0;
+    const module_sample*    sample_         = nullptr;
+    int                     period_         = 0;
 
     // Effect memory
-    int                 porta_target_period_ = 0;
-    int                 porta_speed_ = 0;
-    int                 vib_depth_ = 0;
-    int                 vib_speed_ = 0;
-    int                 vib_pos_   = 0;
-    int                 last_retrig_ = 0;
+    int                     porta_target_period_ = 0;
+    int                     porta_speed_ = 0;
+    int                     vib_depth_ = 0;
+    int                     vib_speed_ = 0;
+    int                     vib_pos_   = 0;
+    int                     last_retrig_ = 0;
 
     static constexpr int max_fadeout_volume = 0xffff;
 
@@ -531,6 +538,8 @@ public:
     virtual void process_note(const module_note& note) override {
         if (note.instrument) {
             instrument_number(note.instrument);
+            sample(instrument().samp());
+            volume(sample().default_volume()); // Setting an instrument sets its default volume
         }
         if (note.note != piano_key::NONE) {
             assert(note.note != piano_key::OFF);
@@ -701,6 +710,8 @@ public:
     virtual void process_note(const module_note& note) override {
         if (note.instrument) {
             instrument_number(note.instrument);
+            sample(instrument().samp());
+            volume(sample().default_volume()); // Setting an instrument sets its default volume
         }
         if (note.note != piano_key::NONE) {
             if (note.note == piano_key::OFF) {
@@ -867,6 +878,7 @@ public:
     virtual void process_note(const module_note& note) override {
         if (note.instrument) {
             instrument_number(note.instrument);
+            sample(instrument().samp()); // TODO: Base sample on note
         }
         if (note.note != piano_key::NONE) {
             if (note.note == piano_key::OFF) {
@@ -887,6 +899,7 @@ public:
                         if (offset) sample_offset_ = offset;
                         else offset = sample_offset_;
                     }
+                    volume(sample().default_volume()); // TODO: When should this be set?
                     trig(offset);
                 }
             }
