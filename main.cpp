@@ -174,7 +174,9 @@ int main(int argc, char* argv[])
             grid.reset(new mod_grid{mod});
         } else {
             static module mod{module_type::mod};
-            mod.instruments.emplace_back(module_instrument{module_sample{sample{create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample"}, 64}});
+            module_instrument inst{};
+            inst.add_sample(module_sample{sample{create_sample(44100/4, piano_key_to_freq(piano_key::C_5)), 44100.0f, "Test sample"}, 64});
+            mod.instruments.emplace_back(std::move(inst));
             mod.order.push_back(0);
             grid.reset(new test_grid{});
             mod_ = &mod;

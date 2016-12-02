@@ -346,7 +346,7 @@ void load_xm(std::istream& in, const char* filename, module& mod)
         wprintf(L"%2.2d: %22.22S\n", ins, ins_hdr.name);
 
         if (!ins_hdr.num_samples) {
-            mod.instruments.push_back(module_instrument{module_sample{sample{std::vector<float>{}, amiga_c5_rate, ""}, 0}});
+            mod.instruments.push_back(module_instrument{});
             continue;
         }
 
@@ -366,15 +366,20 @@ void load_xm(std::istream& in, const char* filename, module& mod)
         EXPECT(vibrato_depth, 0);
         EXPECT(vibrato_rate, 0);
 
-
-        assert(ins_hdr.num_samples == 1);
-        for (unsigned samp = 0; samp < ins_hdr.num_samples; ++samp) {
+        module_instrument inst{ins_hdr.volume_fadeout};
+        std::vector<xm_sample_header> sample_headers;
+        for (unsigned samp_num = 0; samp_num < ins_hdr.num_samples; ++samp_num) {
             xm_sample_header samp_hdr;
             get(in, samp_hdr);
+            sample_headers.push_back(samp_hdr);
+        }
+
+        for (unsigned samp_num = 0; samp_num < ins_hdr.num_samples; ++samp_num) {
+            auto& samp_hdr = sample_headers[samp_num];
             const int loop_type = samp_hdr.type & xm_sample_type_loop_mask;
             const bool is_16bit = (samp_hdr.type & xm_sample_type_16bit_mask) != 0;
 
-            wprintf(L"  %2.2d: %22.22S len %6d type %02X ", samp, samp_hdr.name, samp_hdr.length, samp_hdr.type);
+            wprintf(L"  %2.2d: %22.22S len %6d type %02X ", samp_num, samp_hdr.name, samp_hdr.length, samp_hdr.type);
             if (loop_type) wprintf(L"Loop %6d %6d ", samp_hdr.loop_start, samp_hdr.loop_length);
             wprintf(L"\n");
 
@@ -396,12 +401,14 @@ void load_xm(std::istream& in, const char* filename, module& mod)
             std::string name = std::string(samp_hdr.name, samp_hdr.name + sizeof(samp_hdr.name));
             sanitize(name);
 
-            mod.instruments.push_back(module_instrument{module_sample{sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.finetune/128.0f), name}, samp_hdr.volume, samp_hdr.relative_note}, ins_hdr.volume_fadeout});
-            auto& mod_ins = mod.instruments.back();
+            module_sample samp{sample{sample_data, amiga_c5_rate * note_difference_to_scale(samp_hdr.finetune/128.0f), name}, samp_hdr.volume, samp_hdr.relative_note};
             if (loop_type) {
-                mod_ins.samp().data().loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
+                samp.data().loop(samp_hdr.loop_start, samp_hdr.loop_length, loop_type == xm_sample_loop_type_forward ? ::loop_type::forward : ::loop_type::pingpong);
             }
+            inst.add_sample(std::move(samp));
         }
+        inst.sample_mapping(ins_hdr.sample_number);
+        mod.instruments.push_back(std::move(inst));
     }
 
     wprintf(L"Using %S frequency table\n", mod.xm.use_linear_frequency ? "linear" : "amiga");

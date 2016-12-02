@@ -15,6 +15,12 @@ public:
         sample_ = &s;
         pos_    = static_cast<float>(pos);
         state_  = state::playing_forward;
+
+        // bergborr!.xm uses 9xy to start a looping sample at the very end?
+        if (pos_ >= current_end()) {
+            assert(s.loop_type() != loop_type::none);
+            pos_ = static_cast<float>(s.loop_start());
+        }
     }
 
     void freq(float f) {
@@ -49,6 +55,7 @@ public:
             const float real_incr = state_ == state::playing_backward ? -incr_ : incr_;
             const int samples_till_end = static_cast<int>((end - pos_) / real_incr);
             assert(samples_till_end >= 0);
+
             if (!samples_till_end) {
                 if (sample_->loop_type() != loop_type::none) {
                     if (sample_->loop_type() == loop_type::pingpong) {
@@ -67,7 +74,6 @@ public:
                     }
                     continue;
                 } else {
-                    //wprintf(L"End of instrument at %f\n", pos_);
                     state_ = state::not_playing;
                     break;
                 }

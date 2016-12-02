@@ -73,18 +73,31 @@ private:
     int     relative_note_;
 };
 
+extern const module_sample empty_sample;
+
 class module_instrument {
 public:
-    explicit module_instrument(module_sample&& samp, int volume_fadeout = 0) : sample_(std::move(samp)), volume_fadeout_(volume_fadeout) {
+    explicit module_instrument(int volume_fadeout = 0) : volume_fadeout_(volume_fadeout) {
+        for (auto& s : sample_mapping_) s = 0;
     }
-    
-    module_sample& samp() { return sample_; }
-    const module_sample& samp() const { return sample_; }
+
+    void add_sample(module_sample&& sample) { samples_.push_back(std::move(sample)); }
+    static constexpr int sample_mapping_size = 96;
+    const auto& sample_mapping() const { return sample_mapping_; }
+    void sample_mapping(const uint8_t (&sample_mapping)[sample_mapping_size]) {
+        for (int i = 0; i < sample_mapping_size; ++i) {
+            assert(sample_mapping[i] < samples_.size());
+            sample_mapping_[i] = sample_mapping[i];
+        }
+    }
+    const std::vector<module_sample>& samples() const { return samples_; }
+    const module_sample& samp() const { return samples_.empty() ? empty_sample : samples_[0]; }
     int volume_fadeout() const { return volume_fadeout_; }
 
 private:
-    module_sample sample_;
-    int           volume_fadeout_;
+    std::vector<module_sample> samples_;
+    int                        volume_fadeout_;
+    uint8_t                    sample_mapping_[sample_mapping_size];
 };
 
 struct module_note {

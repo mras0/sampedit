@@ -12,6 +12,7 @@
 constexpr uint8_t default_pan_value = 0x30;
 constexpr float s3m_clock_rate      = 14317056.0f;
 constexpr float xm_clock_rate       = 14317456.0f; // 8363*1712
+const module_sample empty_sample{sample{std::vector<float>{0.0f}, 8363.0f, ""}, 0};
 
 constexpr float amiga_period_to_freq(int period) {
     return amiga_clock_rate / (period * 2);
@@ -89,7 +90,7 @@ int module::freq_to_period(float freq) const {
             // log2(F/8363) * (12*16*4) = 6*12*16*4 - static_cast<float>(period)
             // -(log2(F/8363) * (12*16*4) - 6*12*16*4)  = period
             // 6*12*16*4 - log2(F/8363) * (12*16*4)  = period
-            return static_cast<int>(0.5+log2(freq/8363) * (12*16*4));
+            return static_cast<int>(0.5+6*12*16*4 - log2(freq/8363) * (12*16*4));
         } else {
             return static_cast<int>(0.5+xm_clock_rate / freq);
         }
@@ -246,7 +247,7 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
         s3m_seek(in, instrument_pointers[i]);
         const uint8_t type = read_le_u8(in);
         if (type == 0) {
-            mod.instruments.push_back(module_instrument{module_sample{sample{std::vector<float>{}, 1.0f, ""}, 0}});
+            mod.instruments.push_back(module_instrument{});
             continue;
         }
         assert(type == 1); // 1 = instrument
@@ -281,12 +282,14 @@ void load_s3m(std::istream& in, const char* filename, module& mod)
             s3m_seek(in, memseg);
             in.read(reinterpret_cast<char*>(&data[0]), length);
         }
-
-        mod.instruments.push_back(module_instrument{module_sample{sample{data, static_cast<float>(c2spd), name}, volume}});
+        module_sample samp{sample{data, static_cast<float>(c2spd), name}, volume};
         if (sample_flags & 1) {
             assert(loop_start <= loop_end);
-            mod.instruments.back().samp().data().loop(loop_start, loop_end - loop_start, loop_type::forward);
+            samp.data().loop(loop_start, loop_end - loop_start, loop_type::forward);
         }
+        module_instrument inst{};
+        inst.add_sample(std::move(samp));
+        mod.instruments.push_back(std::move(inst));
     }
 
     constexpr int rows_per_pattern = 64;
@@ -507,11 +510,13 @@ void load_mod(std::istream& in, const char* filename, module& mod)
             in.read(reinterpret_cast<char*>(&data[0]), s.length);
         }
 
-        mod.instruments.push_back(module_instrument{module_sample{sample{data, amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}, s.volume}});
+        module_sample samp{sample{data, amiga_c5_rate * note_difference_to_scale(s.finetune/8.0f), s.name}, s.volume};
         if (s.loop_length > 2) {
-            mod.instruments.back().samp().data().loop(s.loop_start, s.loop_length, loop_type::forward);
+            samp.data().loop(s.loop_start, s.loop_length, loop_type::forward);
         }
-
+        module_instrument inst{};
+        inst.add_sample(std::move(samp));
+        mod.instruments.push_back(std::move(inst));
         assert(in);
     }
 }

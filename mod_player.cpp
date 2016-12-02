@@ -90,7 +90,7 @@ protected:
     void instrument_number(int inst) {
         assert(inst >= 1 && inst <= mod().instruments.size());
         instrument_ = inst;
-        sample_     = nullptr;
+        sample_     = &empty_sample;
     }
 
     int instrument_number() const {
@@ -104,7 +104,6 @@ protected:
 
     void sample(const module_sample& sample) {
         sample_ = &sample;
-        assert(&instrument().samp() == sample_);
     }
 
     const module_sample& sample() const {
@@ -218,7 +217,7 @@ private:
     int                     volume_         = 0;
     int                     fadeout_volume_ = 0;
     int                     instrument_     = 0;
-    const module_sample*    sample_         = nullptr;
+    const module_sample*    sample_         = &empty_sample;
     int                     period_         = 0;
 
     // Effect memory
@@ -881,10 +880,15 @@ public:
             sample(instrument().samp()); // TODO: Base sample on note
         }
         if (note.note != piano_key::NONE) {
-            if (note.note == piano_key::OFF) {
+            if (!instrument_number() || note.note == piano_key::OFF) {
                 volume(0);
                 return;
             }
+            auto& inst = instrument();
+            const int xm_note = static_cast<int>(note.note) - xm_octave_offset * 12;
+            assert(xm_note >= 0 && xm_note < module_instrument::sample_mapping_size);
+            sample(inst.samples()[inst.sample_mapping()[xm_note]]);
+
             const int effect_type = note.effect >> 8;
             const int period = mod().note_to_period(note.note + sample().relative_note());
             if (effect_type == 3 || effect_type == 5) {
@@ -978,6 +982,16 @@ public:
             switch (x) {
             case 0x0: // E0y Set fiter
                 return;
+            case 0x1: // E1y Fine porta down
+                if (!tick) {
+                    do_porta(-y * 4);
+                }
+                return;
+            case 0x2: // E2y Fine porta down
+                if (!tick) {
+                    do_porta(+y * 4);
+                }
+                return;
             case 0x6: // E6y Pattern loop
                 if (!tick) {
                     do_pattern_loop(y);
@@ -1010,7 +1024,9 @@ public:
                     if (note.volume >= volume_command::set_00 && note.volume <= volume_command::set_40) {
                         volume(note.volume - volume_command::set_00);
                     } else {
-                        assert(note.volume == volume_command::none); // Not implemented
+                        if (note.volume != volume_command::none) {
+                            wprintf(L"%2.2d: Ignoring volume command %02X on delay note\n", current_position().row, note.volume);
+                        }
                     }
                 }
                 return;
